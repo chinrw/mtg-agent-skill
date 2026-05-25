@@ -15,7 +15,7 @@ Core principle: **A card's name, your recall of it, or an analogy is not evidenc
 ## When to Use
 
 - Decklist evaluation
-- "Should I add card X to deck Y" (then also see `mtg-card-evaluation.md`)
+- "Should I add card X to deck Y" — for this specific question, invoke the sibling `mtg-card-evaluation` skill via the Skill tool (see **Sub-Skills and References** below)
 - Comparing two decks
 - Predicting matchup performance vs current meta
 - Probability or math questions about a deck
@@ -589,13 +589,18 @@ When reporting cantrip-fueled probabilities, ALWAYS quote both bounds: "raw hype
 
 ## Sub-Skills and References (opt-in, not auto-loaded)
 
-These supporting files load via `Read` only when an analysis needs them:
+Two kinds of opt-in content. Each loads only when the analysis needs it.
+
+### Sibling skill — invoke via the Skill tool
+
+- **`mtg-card-evaluation`** — Five-lens scoring framework for "does card X fit deck Y" with worked examples. Invoke via `Skill` tool with `skill='mtg-card-evaluation'` whenever the question is specifically about whether a single card belongs in a single deck (inclusion, replacement-after-ban, sideboard slot, set-release evaluation). Treat its scorecard + verdict as the inclusion answer; integrate it into your evidence-labeled response. Do NOT inline the five lenses by hand — invoke the skill so its tests and worked examples stay authoritative.
+
+### Supporting files in this skill — load via `Read`
 
 - `reference-tables.md` — Card-name pitfalls (Workshop confusion, Tamiyo MV, Counterspell-not-actually-played), mana-value rules, Chalice / Bowmasters / Wasteland reference, Locus / Urza / Tron geometry, permanent-immunity caveat, "looks played but isn't" list, Legacy staples / manabase / sideboard / combo tables.
-- `mtg-card-evaluation.md` — Five-lens scoring framework for "does card X fit deck Y" with worked examples.
 - `samples/` — Real Legacy decklists captured at a known date (`samples/README.md` is the index — archetype, player, tournament, source URL, fetch date per file). See the **Using Sample Decklists** section below for when to consult them.
 
-The Skill tool loads `SKILL.md` only. All tooling commands are inline above — supporting files contain reference data, not procedural steps.
+The Skill tool loads `SKILL.md` only. All tooling commands are inline above — supporting files contain reference data, not procedural steps. The sibling `mtg-card-evaluation` skill is a separate skill load, not a Read of a file inside this directory.
 
 ## Using Sample Decklists
 
@@ -668,3 +673,5 @@ v3. RED failures driving the current version:
 v3 also consolidated `tooling-notes.md` into this file since the skill is manual-invoke (`disable-model-invocation: true`) — there's no auto-load context cost, and inlining removes the risk of Claude skipping supporting files.
 
 GREEN-verified by subagent test 2026-05-25: applied to a fresh Trinisphere meta question, the agent correctly used curl+headers for Scryfall, parsed 27 real mtgtop8 decklists for Step 4b, computed exact hypergeometric probabilities in Python, and discussed the resolved-permanent caveat. All 7 rubric points passed.
+
+v4 (2026-05-25): repo restructured — each skill is its own folder at the repo root. The five-lens inclusion framework moved out of this directory (`mtg-card-evaluation.md`) and became a sibling skill (`mtg-card-evaluation/SKILL.md`), invoked via the Skill tool when an inclusion question arises. Motivation: name-folder correspondence so each skill installs independently, and the inclusion framework is reusable (callable standalone via `/mtg-card-evaluation`, not gated behind a full deck-analysis pass).

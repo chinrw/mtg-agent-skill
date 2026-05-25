@@ -1,6 +1,6 @@
 # PLAN: Multi-Format (Legacy + Modern) Support + `mtg-card-evaluation` Mode B
 
-**Status:** DRAFT — awaiting user review on the **Open Questions** section before implementation begins.
+**Status:** SHIPPED — Phases 1-6 complete as of v5 (see README.md release notes). This document is retained as a design-record artifact and will be archived in a future cleanup commit.
 **Created:** 2026-05-25
 **Owner:** @chinrw
 **Estimated effort:** ~6–10 hours over multiple sessions (samples are the slow part — mtgtop8 fetches Cloudflare-throttle).
@@ -320,4 +320,4 @@ Returns paginated JSON with `data[]` array of full card objects. Parse with `pyt
 
 ---
 
-**Next action:** Section 6 (Open Questions) is RESOLVED as of 2026-05-25. Phase 1 (restructure + legacy.md "Looks Banned" retrofit) starts on user's "go".
+**Next action:** ARCHIVE. All phases shipped; this plan doc is now a historical record.

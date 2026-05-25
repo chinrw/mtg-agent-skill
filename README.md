@@ -24,19 +24,20 @@ Both skills are configured with `disable-model-invocation: true`. They do not au
 
 ## What `mtg-deck-analysis` does
 
-When you invoke it, Claude runs an 8-step workflow on any MTG decklist or meta question (Legacy or Modern):
+When you invoke it, Claude runs an 8-step main workflow plus 2 sub-step validators (10 entries total) on any MTG decklist or meta question (Legacy or Modern):
 
-0. **Identify the format** (mandatory Step 0) — accept an explicit `Legacy:` / `Modern:` prefix, or detect via format-disjoint cards (Wasteland → Legacy; Ragavan / Wrenn and Six / Murktide → Modern). Ambiguous? Ask. Never silently default. The bound format string drives every subsequent path: `reference-tables/<format>.md`, `samples/<format>/`, mtgtop8 format code (`LE` vs `MO`), B&R section.
-1. **Read literally** — flag every uncertain card
+0. **Identify the format** (MANDATORY). Honor explicit `Legacy:` or `Modern:` prefix. If neither is given, ASK the user — never silently default. The skill currently supports Legacy and Modern only. The bound format string drives every subsequent path: `reference-tables/<format>.md`, `samples/<format>/`, mtgtop8 format code (`LE` vs `MO`), B&R section.
+1. **Read literally** — note every card name; flag any you're not 100% sure of
 2. **Verify Oracle text via Scryfall API** — actual `curl` commands with proper headers (the API rejects unidentified bot traffic)
 3. **Verify the format ban list** — prefer the **Scryfall API banlist endpoint** (`?q=banned%3A<format>`, parseable JSON) over WebFetch of the Wizards B&R HTML page; cite both. Never cached.
 4. **Verify current meta archetypes** — pulled from tournament aggregators (mtgtop8 `f=LE` for Legacy, `f=MO` for Modern)
-5. **Verify deck PRESENCE, not just card existence** — parse 2–3 real decklists per top archetype from `samples/<format>/` and live mtgtop8; "card legal" ≠ "card played"
-6. **Identify critical interactions** — subtypes, mana value vs paid cost, MDFC semantics, channel-instant-speed (e.g., Boseiju), the "resolved permanents are immune to lock cards" rule
-7. **Compute probabilities in Python** — hypergeometric via `math.comb`, never "approximately X%"
-8. **Label evidence types** — sourced fact / verified data / inference / recommendation, never mixed
+4b. **Verify deck PRESENCE, not just card existence** — parse 2–3 real decklists per top archetype from `samples/<format>/` and live mtgtop8; "card legal" ≠ "card played"
+5. **Identify critical interactions** — subtypes, mana value vs paid cost, MDFC semantics, channel-instant-speed (e.g., Boseiju), the "resolved permanents are immune to lock cards" rule
+6. **Compute probabilities in Python** — hypergeometric via `math.comb`, never "approximately X%"
+6b. **Run deterministic validators on the parsed decklist** — mana-base color check + 4-of legality at minimum; archetype similarity, devotion, joint-N-card, cantrip-depth when relevant. Quote validator output verbatim.
+7. **Label evidence types** — sourced fact / verified data / inference / recommendation, never mixed
 
-The full workflow, exact `curl` commands, mtgtop8 decklist parser, and Python deterministic validators (manabase legality, 4-of check, archetype similarity, joint-probability, cantrip-depth) live inline in `mtg-deck-analysis/SKILL.md`. Per-format constants (cantrip pools, Wasteland analog, archetype sample directories, format codes) live in `mtg-deck-analysis/format_data.py` and are imported by the validators when a `format=` keyword arg is passed.
+The full workflow, exact `curl` commands, mtgtop8 decklist parser, and Python deterministic validators (manabase legality, 4-of check, archetype similarity, joint-probability, cantrip-depth) live inline in `mtg-deck-analysis/SKILL.md`. Per-format constants (cantrip pools, Wasteland analog, archetype sample directories, format codes) live in `mtg-deck-analysis/format_data.py`. Two probability validators (`cantrip_depth`, `p_find_target_with_cantrips`) accept a `format=` keyword arg and consult `format_data.py.CANTRIP_POOLS[format]` to filter cantrip counts to format-legal cards. The other validators (`validate_manabase`, `check_four_of`, `archetype_similarity`, `joint_n_cards`, `devotion`) are format-agnostic — callers pass format-specific inputs (e.g., `archetype_similarity` receives the per-format sample-files glob from `ARCHETYPE_SAMPLE_DIRS[format]`).
 
 ## What `mtg-card-evaluation` does
 
@@ -69,7 +70,7 @@ For "where does this card fit?" / "what decks would play it?" / "is it a meta st
 | B5. Best Homes (Top 3) | Three most likely deck homes, each with a one-line Mode A summary scorecard |
 | B6. Meta Position | Composite verdict: **Tier A** (likely staple, 4-of in best home) / **Tier B** (situational, 1–2 of) / **Tier C** (sideboard tech only) / **Tier D** (unplayable in current meta) |
 
-Mode B ships a worked example: **Boseiju, Who Endures in Modern (May 2026)** — verified Oracle text, six Evidence blocks, Tier A verdict justified by archetype-by-archetype evidence.
+Mode B ships a worked example: **Boseiju, Who Endures in Modern (May 2026)** — verified Oracle text, Tier B verdict overall, Tier A inside Amulet Titan, six Evidence blocks, archetype-by-archetype Best-Home analysis.
 
 ## Why this exists
 
@@ -194,10 +195,10 @@ Both sample directories are **point-in-time snapshots**. The meta shifts; re-fet
 - **v4.1** (`mtg-card-evaluation` v2, 2026-05-25) — added Iron Law: no lens score without evidence. Each lens output now requires an Evidence block citing Scryfall / mtgtop8 / Python output / named alternative. Worked examples rewritten with concrete citations and Python computations.
 - **v5** (2026-05-25, **shipped**) — multi-format (Legacy + Modern) support in `mtg-deck-analysis` and Mode B (card-in-meta) framework in `mtg-card-evaluation`. Per `PLAN-modern-mode-b.md`. Delivered in six commits:
   - *Phase 1:* restructure `reference-tables.md` → `reference-tables/{legacy,modern}.md` and `samples/` → `samples/{legacy,modern}/`; add "Live Banlist Verification Sources" section to both reference tables (Scryfall API banlist endpoint `?q=banned%3A<format>` preferred over Wizards HTML fetch).
-  - *Phase 2:* mandatory Step 0 (format identification) added to `mtg-deck-analysis/SKILL.md`. Heuristic detection (Wasteland → Legacy; Ragavan/W6/Murktide → Modern) plus ask-if-ambiguous. Format is bound for the rest of the analysis run; refuses to proceed without it.
+  - *Phase 2:* mandatory Step 0 (format identification) added to `mtg-deck-analysis/SKILL.md`. Honor explicit `Legacy:` / `Modern:` prefix; otherwise ASK the user (with an optional one-line hint citing format-disjoint cards like Wasteland or Ragavan/W6 when present — never auto-inferred). Format is bound for the rest of the analysis run; refuses to proceed without it.
   - *Phase 3:* 10 Modern sample decklists fetched live from mtgtop8 on 2026-05-25 (`f=MO`, `meta=54`) — Boros Aggro, Affinity, Blink, UR Aggro, UrzaTron, Ruby Storm, Eldrazi Ramp, UW Control, Living End, Amulet Titan.
   - *Phase 4:* `reference-tables/modern.md` populated with Scryfall-verified Modern staples, manabase patterns (fetchlands + shocks + Triomes + MDFCs, no Wasteland), Modern interaction pitfalls (evoke-pitch elementals MV 5 not 0, channel-instant-speed, etc.), and "Looks Modern but isn't" notes — no static banlist cached.
-  - *Phase 5:* `format_data.py` module exporting `CANTRIP_POOLS`, `WASTELAND_ANALOG`, `ARCHETYPE_SAMPLE_DIRS`, `FORMAT_CODES`. Validators take `format=` keyword arg and consult this module for per-format constants; manabase color logic stays format-agnostic.
+  - *Phase 5:* `format_data.py` module exporting `CANTRIP_POOLS`, `WASTELAND_ANALOG`, `ARCHETYPE_SAMPLE_DIRS`, `FORMAT_CODES`. Two probability validators (`cantrip_depth`, `p_find_target_with_cantrips`) accept a `format=` keyword arg and consult `format_data.py.CANTRIP_POOLS[format]` to filter cantrip counts to format-legal cards. The other validators (`validate_manabase`, `check_four_of`, `archetype_similarity`, `joint_n_cards`, `devotion`) are format-agnostic — callers pass format-specific inputs (e.g., `archetype_similarity` receives the per-format sample-files glob from `ARCHETYPE_SAMPLE_DIRS[format]`); manabase color logic stays format-agnostic.
   - *Phase 6:* Mode B (six-lens card-in-meta positioning) added to `mtg-card-evaluation/SKILL.md`. Same Iron Law as Mode A, qualitative Tier verdict (A/B/C/D) instead of numeric sum. Worked example: Boseiju, Who Endures in Modern May 2026.
 
   Phase 7 (TDD verification) was rolled into per-phase GREEN tests at commit time; Phase 8 = this README update.

@@ -39,7 +39,7 @@ This applies to **every** card you cite — not only the ones being analyzed. Ca
 
 **Step 4 — Verify current meta archetypes.** Pull top 10 by share from mtgtop8 (curl with UA works; mtgdecks and aetherhub are Cloudflare-blocked — see the source-reliability matrix below). Note the date and `meta=` code.
 
-**Step 4b — Verify deck PRESENCE, not just card existence.** Before claiming an interaction matters (e.g., "Chalice@2 catches Counterspell"), confirm the target card is **actually mainboarded** in current decklists. Parse 2–3 sample decklists per top archetype from mtgtop8 (parser below) and tabulate. Drop any interaction claim whose target card is absent from the sample. Card legality ≠ card play rate.
+**Step 4b — Verify deck PRESENCE, not just card existence.** Before claiming an interaction matters (e.g., "Chalice@2 catches Counterspell"), confirm the target card is **actually mainboarded** in current decklists. First check `samples/` for a recent sample of that archetype (see **Using Sample Decklists** below for the staleness check); if the sample is fresh and you only need 1 deck per archetype, that's enough. For 2–3 decklists per archetype (the standard for inclusion claims), parse live from mtgtop8 with the parser below. Drop any interaction claim whose target card is absent. Card legality ≠ card play rate.
 
 **Step 5 — Identify critical interactions.** Subtypes, mana value (not paid cost), mana vs activated abilities, MDFC graveyard semantics, trigger conditions, **and the "already-resolved permanent" semantics** — Chalice / Trinisphere / Thalia / Sphere only tax future casts; they don't undo permanents that already resolved. See `reference-tables.md`.
 
@@ -287,8 +287,67 @@ These supporting files load via `Read` only when an analysis needs them:
 
 - `reference-tables.md` — Card-name pitfalls (Workshop confusion, Tamiyo MV, Counterspell-not-actually-played), mana-value rules, Chalice / Bowmasters / Wasteland reference, Locus / Urza / Tron geometry, permanent-immunity caveat, "looks played but isn't" list, Legacy staples / manabase / sideboard / combo tables.
 - `mtg-card-evaluation.md` — Five-lens scoring framework for "does card X fit deck Y" with worked examples.
+- `samples/` — Real Legacy decklists captured at a known date (`samples/README.md` is the index — archetype, player, tournament, source URL, fetch date per file). See the **Using Sample Decklists** section below for when to consult them.
 
 The Skill tool loads `SKILL.md` only. All tooling commands are inline above — supporting files contain reference data, not procedural steps.
+
+## Using Sample Decklists
+
+The `samples/` directory contains real tournament decklists captured at a known date (currently May 2026). The index `samples/README.md` lists each file's archetype, player, tournament, mtgtop8 source URL, and fetch date.
+
+### When to use samples (two valid cases)
+
+1. **As reference examples for archetype shape.** When the user pastes a deck and asks "is this competitive?", samples show what a tournament-going version of that archetype looks like — card choices, ratios, manabase, sideboard. The deviation between the user's list and the matching sample IS the analysis. Cite the sample file and its fetch date as evidence.
+
+2. **As cached input for Step 4b deck-presence verification — only when sample is fresh enough.** Live mtgtop8 fetches are slow (~5–15s per archetype) and Cloudflare-prone. If the question only needs "what does archetype X typically run", a recent sample answers without the fetch.
+
+### When samples are NOT enough (require live fetch)
+
+- Any question about **current meta share** — samples are one decklist each, not a sample of the population. Use mtgtop8's format page for percentages.
+- The sample's fetch date predates a B&R announcement or set release that has happened since. Check `samples/README.md`'s date column; if stale, refetch.
+- Step 4b says "2–3 sample decklists per top archetype" — that's the requirement for inclusion claims. If you cite "Card X is played in archetype Y" based on a SINGLE sample, you have not satisfied Step 4b — fetch live for more lists.
+
+### Why this is not a contradiction of "don't cache"
+
+The "don't cache Oracle text / banlist" rule applies to authoritative facts that change without warning. Sample decklists are **examples at an explicit timestamp**, not facts about the current meta. Any claim derived from a sample MUST cite the sample's fetch date — never present sample-derived data as "current."
+
+### Input format for user-pasted decklists
+
+Samples in `samples/*.txt` use the canonical mtgtop8 export format — the same format users commonly paste:
+
+```
+4 Brainstorm
+4 Ponder
+...
+Sideboard
+2 Pyroblast
+...
+```
+
+When parsing a user paste, be tolerant of these variations:
+- `4 Card Name` (canonical) / `4x Card Name` / `4    Card Name` — match `^\s*(\d+)\s*[xX]?\s+(.+?)\s*$`
+- Sideboard separator: literal `Sideboard` (any case) on its own line — also accept `// Sideboard`, `SB:`, or `Sideboard (15)`
+- Strip category headers like `Creatures (12)`, `Lands (22)`, `Spells (26)` — keep only count-prefixed lines
+- If no `Sideboard` label and the list has 75 lines, treat the last 15 as SB; if 65, last 15; otherwise ask the user to disambiguate
+- MDFCs may be written as `Tamiyo, Inquisitive Student` or `Tamiyo, Inquisitive Student // Tamiyo, Seasoned Scholar` — verify via Scryfall regardless
+
+After parsing, sum the counts; reject a paste where mainboard ≠ 60 (or ≠ 80 for Yorion companion decks) or sideboard ≠ 15, and ask the user to confirm.
+
+### Regression-testing the skill itself
+
+When you change `SKILL.md` or `reference-tables.md`, run analysis against at least one sample (e.g., `samples/Legacy_Doomsday_by_Sinflower.txt`) before committing. Confirm the updated workflow still produces a sensible analysis — catches drift between the workflow description and how Claude actually acts on it.
+
+### Sample staleness check
+
+Each entry in `samples/README.md` has a fetch date. Before relying on a sample, scan recent B&R announcements:
+
+```bash
+curl -sSL -H "User-Agent: mtg-deck-analysis/1.0" \
+  "https://magic.wizards.com/en/news/announcements" \
+  | grep -i "banned\|restricted" | head -10
+```
+
+If a Legacy B&R announcement is dated AFTER your sample, the sample's archetype shape may be obsolete — refetch via the mtgtop8 parser above before citing.
 
 ## TDD Status
 

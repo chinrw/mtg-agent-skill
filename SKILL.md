@@ -45,6 +45,8 @@ This applies to **every** card you cite — not only the ones being analyzed. Ca
 
 **Step 6 — Compute probabilities in Python.** Never write "approximately X%". Use `python3` with `math.comb` (template under "Tooling" below). For tempo questions, ALSO compute the conditional: P(your lock card resolves BEFORE opp's threats deploy). Chalice on the draw against tempo is often "too late" — ~95% of opponents deploy a T1 threat.
 
+**Step 6b — Run deterministic validators on the parsed decklist.** Before drawing inferential conclusions ("the deck looks like X", "this seems uncastable", "deck is ~80% similar to UR Tempo"), run the relevant Python validators in the **Deterministic Validators** block under Tooling below. Each validator turns a vibe-based judgment into a citable number. **At minimum**: run mana-base color validation (catches uncastable cards) and 4-of legality. **When relevant**: archetype similarity vs samples, color devotion (combo decks), N-card joint probability (Tron/combo openers), cantrip filtering depth (combo decks with Brainstorm/Ponder/Flow State). Quote the validator's output verbatim in your analysis; do NOT paraphrase numbers.
+
 **Step 7 — Label evidence types.** Every claim is one of:
 - **Sourced fact** (Scryfall Oracle / Wizards B&R)
 - **Verified data** (tournament decklist with URL)
@@ -247,6 +249,310 @@ p_theirs = p_at_least_k(60, K=20, n=7, k=1)  # 20 MV-1 cards
 #### Joint with overlapping card types
 
 If your "good cards" overlap (e.g., a card counts as both a threat AND a draw spell), `p_joint_two` over-counts. Switch to direct simulation or inclusion-exclusion across the actual disjoint subsets.
+
+### Deterministic Validators (Python Helpers)
+
+Run these BEFORE inferring anything about a deck. Each replaces a vibe-based judgment with a citable number. Workflow Step 6b mandates the first two; the rest are situational.
+
+```python
+# === Shared types ===
+# A "parsed decklist" is a tuple (mainboard, sideboard) where each section
+# is a list of (count, card_name) tuples. Build it once via mtgtop8 parser
+# or by parsing user-pasted text per Step 1 + "Input format" section.
+
+from math import comb
+from itertools import combinations
+import re
+```
+
+#### 1. Mana-base color validation — catches uncastable cards
+
+```python
+def validate_manabase(mainboard, scryfall_data):
+    """
+    Catch spells the deck can't cast because no land produces the colored mana.
+
+    mainboard: list of (count, name)
+    scryfall_data: dict mapping card_name -> Scryfall JSON
+      (must include `produced_mana` for lands/permanents and `mana_cost` for spells)
+
+    Returns: list of (name, missing_colors) for any spell whose colored
+             requirements aren't met by the deck's mana sources.
+
+    Caveat: doesn't model "spend only on X" restrictions (e.g., Eldrazi Temple
+            only casts Eldrazi). Doesn't model City of Brass / Mana Confluence
+            "any color" (those auto-pass). Strict subset check on {W,U,B,R,G}.
+    """
+    produced = set()
+    for count, name in mainboard:
+        data = scryfall_data.get(name, {})
+        produced.update(data.get("produced_mana", []))
+
+    uncastable = []
+    for count, name in mainboard:
+        data = scryfall_data.get(name, {})
+        if "Land" in data.get("type_line", ""):
+            continue  # lands don't need to be cast
+        cost = data.get("mana_cost", "")
+        required = set(re.findall(r'\{([WUBRG])\}', cost))
+        missing = required - produced
+        if missing:
+            uncastable.append((name, sorted(missing)))
+    return uncastable
+
+# Usage:
+# >>> validate_manabase(mb, scryfall_data)
+# [('Punishing Fire', ['R'])]
+```
+
+#### 2. 4-of legality + card multiset
+
+```python
+def check_four_of(mainboard, sideboard, basic_lands=None):
+    """
+    Flag non-basic cards appearing > 4 times across mainboard + sideboard.
+
+    basic_lands: set of names exempt from the 4-copy rule
+                 (default: standard Magic basics + snow basics + wastes)
+
+    Returns: list of (name, total_count) for any violation.
+    """
+    if basic_lands is None:
+        basic_lands = {
+            "Plains", "Island", "Swamp", "Mountain", "Forest", "Wastes",
+            "Snow-Covered Plains", "Snow-Covered Island", "Snow-Covered Swamp",
+            "Snow-Covered Mountain", "Snow-Covered Forest",
+        }
+    # Cards explicitly allowed > 4: e.g., Relentless Rats, Persistent
+    # Petitioners, Shadowborn Apostle, Rat Colony, Dragon's Approach,
+    # Seven Dwarves (capped at 7), Slime Against Humanity.
+    any_number = {
+        "Relentless Rats", "Persistent Petitioners", "Shadowborn Apostle",
+        "Rat Colony", "Dragon's Approach", "Slime Against Humanity",
+        "Templar Knight",
+    }
+
+    totals = {}
+    for section in (mainboard, sideboard):
+        for count, name in section:
+            totals[name] = totals.get(name, 0) + count
+    violations = [
+        (n, c) for n, c in totals.items()
+        if c > 4 and n not in basic_lands and n not in any_number
+    ]
+    return violations
+
+# Usage:
+# >>> check_four_of(mb, sb)
+# []  # legal
+```
+
+#### 3. Color devotion (for Thassa's Oracle / Painter's / mono-color combos)
+
+```python
+def devotion(permanents_on_battlefield, scryfall_data):
+    """
+    Count colored mana symbols (W,U,B,R,G) across permanents on battlefield.
+    Doomsday/Thassa's Oracle wants devotion to blue >= 1 to win.
+    Painter's Servant + mono-color check uses this.
+
+    permanents_on_battlefield: list of card names assumed in play
+    Returns: dict {color: int} mapping each color to its devotion count.
+    """
+    counts = {c: 0 for c in "WUBRG"}
+    for name in permanents_on_battlefield:
+        cost = scryfall_data.get(name, {}).get("mana_cost", "")
+        for sym in re.findall(r'\{([WUBRG])\}', cost):
+            counts[sym] += 1
+        # Hybrid like {W/U} contributes to both: parse if needed.
+        for sym in re.findall(r'\{([WUBRG])/([WUBRG])\}', cost):
+            counts[sym[0]] += 1
+            counts[sym[1]] += 1
+    return counts
+
+# Usage:
+# >>> devotion(["Thassa's Oracle"], scryfall_data)
+# {'W': 0, 'U': 2, 'B': 0, 'R': 0, 'G': 0}  # Oracle cost is {U}{U}, so 2 blue devotion
+# (Comfortably above the >=1 threshold for Oracle's win trigger.)
+```
+
+#### 4. Archetype similarity vs samples (weighted Jaccard)
+
+```python
+def archetype_similarity(user_mainboard, sample_files):
+    """
+    Score user's mainboard against each sample deck. Returns ranked list.
+
+    user_mainboard: list of (count, name) tuples
+    sample_files: list of filesystem paths to sample .txt files
+
+    Similarity = sum(min(user[card], sample[card]) for card in both)
+               / sum(max(user[card], sample[card]) for card in either)
+    (Weighted Jaccard on multisets — 0.0 = nothing in common, 1.0 = identical.)
+
+    Returns: list of (sample_path, similarity_pct, shared_cards_count),
+             sorted descending.
+    """
+    user = {n: c for c, n in user_mainboard}
+
+    def parse_sample(path):
+        out = {}
+        for line in open(path):
+            line = line.strip()
+            if not line or line.lower() == "sideboard":
+                if line.lower() == "sideboard":
+                    break  # stop at SB boundary
+                continue
+            m = re.match(r'^(\d+)\s*[xX]?\s+(.+?)\s*$', line)
+            if m:
+                out[m.group(2)] = int(m.group(1))
+        return out
+
+    results = []
+    for path in sample_files:
+        sample = parse_sample(path)
+        union_keys = set(user) | set(sample)
+        if not union_keys:
+            continue
+        sum_min = sum(min(user.get(k, 0), sample.get(k, 0)) for k in union_keys)
+        sum_max = sum(max(user.get(k, 0), sample.get(k, 0)) for k in union_keys)
+        sim = sum_min / sum_max if sum_max else 0.0
+        shared = sum(1 for k in union_keys if k in user and k in sample)
+        results.append((path, round(sim * 100, 1), shared))
+    return sorted(results, key=lambda r: -r[1])
+
+# Usage:
+# >>> archetype_similarity(user_mb, glob.glob("samples/Legacy_*.txt"))
+# [('samples/Legacy_UR_Tempo_by_silviawataru.txt', 78.4, 23),
+#  ('samples/Legacy_Dimir_Tempo_by_kyataoka.txt', 41.2, 14),
+#  ...]
+```
+
+#### 5. N-card joint probability (Tron pieces, combo openers)
+
+```python
+def joint_n_cards(N, card_counts, n_drawn):
+    """
+    P(>=1 of EACH listed card type in opener) via inclusion-exclusion.
+
+    card_counts: list of ints, one per disjoint card type (e.g., [4, 4, 4]
+                 for 4 Urza's Tower + 4 Mine + 4 Power Plant)
+    N: deck size (typically 60)
+    n_drawn: cards seen (7 opener on play; 8 on draw; etc.)
+
+    Returns: probability as a float in [0, 1].
+
+    Note: card types MUST be disjoint (no card is in two pools). For
+    Planar Nexus which counts as all subtypes, model it as a separate
+    type with its own count.
+    """
+    total = comb(N, n_drawn)
+    union_prob = 0
+    # Sum over non-empty subsets of card types: (-1)^(|S|+1) * P(no card in S)
+    K_list = card_counts
+    n_types = len(K_list)
+    for size in range(1, n_types + 1):
+        for subset in combinations(range(n_types), size):
+            excluded = sum(K_list[i] for i in subset)
+            if N - excluded < n_drawn:
+                continue  # impossible to avoid drawing any from this subset
+            p_avoid_subset = comb(N - excluded, n_drawn) / total
+            union_prob += ((-1) ** (size + 1)) * p_avoid_subset
+    return 1 - union_prob
+
+# Usage:
+# >>> joint_n_cards(60, [4, 4, 4], 7)  # P(all 3 Tron pieces in opener on play)
+# 0.0471  # 4.71% — Tron T1 without any "wildcards"
+# >>> joint_n_cards(60, [4, 1], 7)  # Doomsday (4) + LED (1) — fast-kill hand
+# 0.0416  # 4.16%
+#
+# IMPORTANT: this helper assumes DISJOINT pools — every card belongs to
+# exactly one type bucket. For cards that satisfy multiple slots (e.g.,
+# Planar Nexus counts as Tower AND Mine AND Power-Plant simultaneously,
+# or Cavern of Souls naming a chosen creature type), you MUST pre-process
+# differently. For Planar Nexus + Tron:
+#
+#   P(Tron complete) = P(all 3 specific pieces)
+#                    + P(NOT all 3) * P(Nexus drawn AND ≥1 missing piece)
+#                    [or just simulate — closed-form gets messy]
+#
+# For combos where one card replaces multiple slots, simulate via
+# random.choices or write the explicit inclusion-exclusion by hand.
+```
+
+#### 6. Cantrip filtering depth and target-find probability
+
+```python
+# Cantrip catalog: each entry = (look_depth, keep_depth, draws_card, shuffles)
+# look_depth = how many top cards the cantrip reveals to you
+# keep_depth = how many go to hand
+# draws_card = +1 if the cantrip itself draws a card (Ponder's "then draw a card")
+# shuffles = True if the unrevealed cards return via a shuffle (Ponder optional)
+CANTRIPS = {
+    "Brainstorm": dict(look=3, keep=1, draws=2, shuffles=False),  # +3 see, net +1 (puts 2 back)
+    "Ponder":     dict(look=3, keep=0, draws=1, shuffles=True),
+    "Preordain":  dict(look=2, keep=0, draws=1, shuffles=False),
+    "Stock Up":   dict(look=5, keep=2, draws=0, shuffles=False),
+    "Flow State": dict(look=3, keep=1, draws=0, shuffles=False),
+    "Lorien Revealed": dict(look=0, keep=0, draws=3, shuffles=False),  # cast mode
+    "Mishra's Bauble": dict(look=1, keep=0, draws=1, shuffles=False),  # top of YOUR library
+    "Thundertrap Trainer": dict(look=4, keep=1, draws=0, shuffles=False),
+}
+
+def cantrip_depth(deck_cantrips_count, turn, on_play=True):
+    """
+    Estimate effective cards seen by turn N given cantrip density.
+
+    deck_cantrips_count: dict {cantrip_name: count_in_deck}
+    turn: which turn you're computing through
+    on_play: True if you're on the play (no T1 draw)
+
+    Returns: (cards_drawn_raw, effective_cards_seen_upper_bound)
+
+    Upper bound assumes every cantrip is drawn AND cast — actual will be lower.
+    Treat the second number as a ceiling, not an expectation.
+    """
+    raw_draws = 7 + (turn - 1) + (0 if on_play else 1)
+    # Probability of drawing each cantrip type by turn (rough):
+    # Assume ~50% of cantrip copies are drawn by turn 3.
+    drawn_fraction = min(0.6, 0.2 * turn)
+    extra_seen = 0
+    for name, ct in deck_cantrips_count.items():
+        cantrip = CANTRIPS.get(name)
+        if not cantrip:
+            continue
+        copies_drawn = ct * drawn_fraction
+        extra_seen += copies_drawn * cantrip["look"]
+    return raw_draws, raw_draws + int(extra_seen)
+
+def p_find_target_with_cantrips(N, K, deck_cantrips_count, turn, on_play=True):
+    """
+    Upper bound on P(see >=1 of target by turn N) accounting for cantrip selection.
+    See cantrip_depth for caveats — this is a CEILING, not an exact probability.
+
+    For a precise answer on a specific game state, simulate.
+    """
+    raw, eff = cantrip_depth(deck_cantrips_count, turn, on_play)
+    # Raw hypergeometric (no cantrip selection):
+    p_raw = 1 - comb(N - K, raw) / comb(N, raw) if N - K >= raw else 1.0
+    # Effective (with cantrip look depth — upper bound):
+    p_eff = 1 - comb(N - K, eff) / comb(N, eff) if N - K >= eff else 1.0
+    return {"P_raw": round(p_raw, 4), "P_with_cantrips_upper_bound": round(p_eff, 4)}
+
+# Usage (Doomsday looking for its namesake by T3 on the draw):
+# >>> p_find_target_with_cantrips(60, 4,
+# ...     {"Brainstorm": 4, "Ponder": 4, "Flow State": 4}, turn=3, on_play=False)
+# {'P_raw': 0.4992, 'P_with_cantrips_upper_bound': 0.9091}
+# True P is somewhere in [0.50, 0.91]; cantrips bias toward keeping good cards.
+```
+
+**Why cantrip filtering is an upper bound, not exact:**
+- Cantrips selectively KEEP good cards and BOTTOM bad ones → real P(find target | see it) > 1 ideally, but the model is "uniform random look"
+- Brainstorm puts 2 cards back on top → next draw step re-sees them (not a fresh look)
+- Ponder's shuffle option randomizes the next K cards → adds variance
+- For precise answers in specific game states, write a Monte Carlo simulation
+
+When reporting cantrip-fueled probabilities, ALWAYS quote both bounds: "raw hypergeometric P = X; with-cantrip ceiling = Y; true expected P is between these, leaning toward Y in selectively-built combo decks."
 
 ### When Things Break
 

@@ -284,12 +284,12 @@ def validate_manabase(mainboard, scryfall_data):
             "any color" (those auto-pass). Strict subset check on {W,U,B,R,G}.
     """
     produced = set()
-    for count, name in mainboard:
+    for _, name in mainboard:
         data = scryfall_data.get(name, {})
         produced.update(data.get("produced_mana", []))
 
     uncastable = []
-    for count, name in mainboard:
+    for _, name in mainboard:
         data = scryfall_data.get(name, {})
         if "Land" in data.get("type_line", ""):
             continue  # lands don't need to be cast

@@ -110,31 +110,39 @@ To make either skill auto-load instead, remove `disable-model-invocation: true` 
 
 ```
 mtg-agent-skill/
-├── README.md                       # this file
-├── mtg-deck-analysis/              # deck-level workflow skill
-│   ├── SKILL.md                    # 7-step workflow + tooling + deterministic validators
-│   ├── reference-tables.md         # heavy lookup data — card pitfalls, manabase, sideboard, combos
-│   └── samples/                    # real Legacy decklists used as skill test input
-│       ├── README.md               # index — archetype, player, tournament, source URL per file
-│       ├── Legacy_12_-_Post_by_sm294.txt              # Cloudpost / Blue Post (user-submitted)
-│       ├── Legacy_Trini_Tron_Karn_by_SinKarma.txt     # Trini Tron / Artifact Karn (user-submitted)
-│       ├── Legacy_UR_Tempo_by_silviawataru.txt        # UR Delver / Tempo
-│       ├── Legacy_Dimir_Tempo_by_kyataoka.txt         # Dimir Tempo
-│       ├── Legacy_Eldrazi_Aggro_by_Schmeckles.txt     # Eldrazi Aggro
-│       ├── Legacy_UWx_Control_by_habsburger.txt       # UWx Control
-│       ├── Legacy_Lands_by_Lincerastas.txt            # Lands (Mono-Green)
-│       ├── Legacy_Doomsday_by_Sinflower.txt           # Doomsday (Tempo Flow)
-│       ├── Legacy_Death_and_Taxes_by_l337erhosen.txt  # Death & Taxes (Yorion 80-card)
-│       └── Legacy_Boros_Aggro_by_Mikebrav.txt         # Boros Aggro
-└── mtg-card-evaluation/            # inclusion-question skill
-    └── SKILL.md                    # five-lens framework + three worked examples
+├── README.md                                  # this file
+├── PLAN-modern-mode-b.md                      # multi-format + Mode B implementation plan (active)
+├── mtg-deck-analysis/                         # deck-level workflow skill (format-aware)
+│   ├── SKILL.md                               # 7-step workflow + tooling + deterministic validators
+│   ├── reference-tables/                      # split per-format
+│   │   ├── legacy.md                          # Legacy pitfalls/staples/manabase + Live Banlist Verification (Scryfall API + Wizards)
+│   │   └── modern.md                          # Modern Live Banlist Verification canonical; rest TODO Phase 4
+│   └── samples/                               # split per-format
+│       ├── legacy/                            # real Legacy decklists used as skill test input
+│       │   ├── README.md                      # index — archetype, player, tournament, source URL per file
+│       │   ├── Legacy_12_-_Post_by_sm294.txt              # Cloudpost / Blue Post (user-submitted)
+│       │   ├── Legacy_Trini_Tron_Karn_by_SinKarma.txt     # Trini Tron / Artifact Karn (user-submitted)
+│       │   ├── Legacy_UR_Tempo_by_silviawataru.txt        # UR Delver / Tempo
+│       │   ├── Legacy_Dimir_Tempo_by_kyataoka.txt         # Dimir Tempo
+│       │   ├── Legacy_Eldrazi_Aggro_by_Schmeckles.txt     # Eldrazi Aggro
+│       │   ├── Legacy_UWx_Control_by_habsburger.txt       # UWx Control
+│       │   ├── Legacy_Lands_by_Lincerastas.txt            # Lands (Mono-Green)
+│       │   ├── Legacy_Doomsday_by_Sinflower.txt           # Doomsday (Tempo Flow)
+│       │   ├── Legacy_Death_and_Taxes_by_l337erhosen.txt  # Death & Taxes (Yorion 80-card)
+│       │   └── Legacy_Boros_Aggro_by_Mikebrav.txt         # Boros Aggro
+│       └── modern/                            # populated in Phase 3 of PLAN-modern-mode-b.md
+│           └── README.md                      # stub explaining target archetypes + file format
+└── mtg-card-evaluation/                       # inclusion-question + (Phase 6) card-in-meta skill
+    └── SKILL.md                               # five-lens Mode A; Mode B added in Phase 6
 ```
 
-`SKILL.md` is what Claude Code loads when the skill is invoked. Other markdown files load via `Read` only when an analysis actually needs them, to keep context lean.
+`SKILL.md` is what Claude Code loads when the skill is invoked. Other markdown files load via `Read` only when an analysis actually needs them, to keep context lean. Format-specific files (`reference-tables/<format>.md`, `samples/<format>/`) are selected based on the format identified at the start of the analysis.
 
 ## Sample input
 
-`mtg-deck-analysis/samples/` contains real Legacy decklists used as test input when validating skill changes. See `samples/README.md` for the full index with archetype, player, tournament, and mtgtop8 source URL per file. The two original user-submitted lists (`Legacy_12_-_Post_by_sm294.txt`, `Legacy_Trini_Tron_Karn_by_SinKarma.txt`) motivated the skill — the original analysis of them surfaced most of the failure modes the skills now prevent. The remaining eight files cover one representative recent decklist per top-meta Legacy archetype (UR Tempo, Dimir Tempo, Eldrazi Aggro, UWx Control, Lands, Doomsday, Death & Taxes, Boros Aggro), fetched from mtgtop8 in May 2026.
+`mtg-deck-analysis/samples/legacy/` contains real Legacy decklists used as test input when validating skill changes. See `samples/legacy/README.md` for the full index with archetype, player, tournament, and mtgtop8 source URL per file. The two original user-submitted lists (`Legacy_12_-_Post_by_sm294.txt`, `Legacy_Trini_Tron_Karn_by_SinKarma.txt`) motivated the skill — the original analysis of them surfaced most of the failure modes the skills now prevent. The remaining eight files cover one representative recent decklist per top-meta Legacy archetype (UR Tempo, Dimir Tempo, Eldrazi Aggro, UWx Control, Lands, Doomsday, Death & Taxes, Boros Aggro), fetched from mtgtop8 in May 2026.
+
+`mtg-deck-analysis/samples/modern/` is stubbed for Phase 3 of `PLAN-modern-mode-b.md` (will hold 8–10 Modern decklists matching the top-meta Modern archetypes as of fetch date).
 
 `mtg-card-evaluation` doesn't ship its own samples — its worked examples reference these same lists by archetype.
 
@@ -144,6 +152,8 @@ mtg-agent-skill/
 - **v2** — added Step 4b (deck-presence verification), strengthened Step 6 (Python required), added permanent-immunity caveat, inlined Scryfall API tooling.
 - **v3** — consolidated `tooling-notes.md` into `SKILL.md` since the skill is manual-invoke; updated reference tables for Workshop/Tamiyo/Counterspell corrections; added 8 mtgtop8 sample decklists + Step 6b deterministic validators (manabase, 4-of, devotion, archetype-similarity, joint-N-cards, cantrip-depth); GREEN-verified by subagent on Trinisphere meta question and Doomsday validator scenarios.
 - **v4** — repo restructured to one folder per skill at repo root. Card-evaluation framework split out as its own skill (`mtg-card-evaluation`) callable standalone or as sub-skill via Skill tool; `mtg-deck-analysis` retains samples + reference-tables. Motivates from name-folder correspondence and reusability of the five-lens framework outside a full deck-analysis run.
+- **v4.1** (`mtg-card-evaluation` v2, 2026-05-25) — added Iron Law: no lens score without evidence. Each lens output now requires an Evidence block citing Scryfall / mtgtop8 / Python output / named alternative. Worked examples rewritten with concrete citations and Python computations.
+- **v5 Phase 1** (in progress) — multi-format restructure groundwork. Per `PLAN-modern-mode-b.md`. `reference-tables.md` → `reference-tables/{legacy,modern}.md`; `samples/` → `samples/{legacy,modern}/`. Modern stubs created. Both reference tables now carry "Live Banlist Verification Sources" sections documenting the Scryfall API banlist endpoint (`?q=banned%3A<format>`) alongside the Wizards B&R URL. Skill is fully functional for Legacy after Phase 1; Modern data populates in Phases 3–4, mandatory Step 0 format-identification in Phase 2, Mode B card-in-meta in Phase 6.
 
 See the `## TDD Status` section at the bottom of each `SKILL.md` for the running RED-failure log for that skill.
 

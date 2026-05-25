@@ -122,22 +122,50 @@ One Planar Nexus collapses Tron completion from "need all 3 specific pieces" to 
 
 ---
 
-# Format Ban Lists — Live Lookup Only
+# Live Banlist Verification Sources (Legacy) — CANONICAL
 
-**Always fetch the live Wizards page before making any ban claim. No cached list lives in this file.**
+**The Iron Law:** never cite Legacy legality from this file or from memory. Always fetch live.
 
-- **B&R page (all formats):** https://magic.wizards.com/en/banned-restricted-list
-- **Announcement archive (timeline of changes):** https://magic.wizards.com/en/news/announcements
+## Primary: Scryfall API (parseable JSON)
 
-Why no snapshot here: banlists drift every few months. Any in-file copy is wrong shortly after it's pasted. The skill enforces fetch-before-claim — there is intentionally no inline fallback to undermine that discipline.
+```bash
+curl -s -H "User-Agent: chinrw-mtg-skill/1.0" -H "Accept: application/json" \
+  "https://api.scryfall.com/cards/search?q=banned%3Alegacy&order=name" \
+  | python3 -c "import sys, json; d=json.load(sys.stdin); print(len(d['data']), 'cards'); [print(c['name']) for c in d['data']]"
+```
 
-When a deck analysis touches legality:
-1. WebFetch the B&R URL above
-2. Confirm the card's status for the relevant format (Legacy, Modern, Pioneer, Pauper, etc. each have their own list on the same page)
-3. If the status changed recently, fetch the linked announcement for the rationale
-4. Cite both the URL and the fetch date in the answer
+Returns JSON with `data[]` of full card objects. As of 2026-05-25 verification, the endpoint returns **169 banned-in-Legacy cards** (includes silver-bordered conspiracy/joke entries — filter on `border_color != "silver"` if you need only tournament-relevant bans, e.g. `[c for c in data if c.get('border_color') != 'silver']`).
 
-If you can't reach the URL, say so explicitly and refuse to claim ban status — do NOT fall back to memory.
+For pagination (Scryfall caps at 175 per page; the Legacy banlist is just under that cap, so single page usually suffices):
+
+```bash
+# If has_more=true in response, fetch next_page URL from response
+```
+
+## Secondary: Wizards B&R page (authoritative on announcement day)
+
+```bash
+curl -s -H "User-Agent: chinrw-mtg-skill/1.0" \
+  "https://magic.wizards.com/en/banned-restricted-list" \
+  | grep -A 1000 "Legacy" | head -200
+```
+
+Wizards page is canonical on B&R announcement days (Scryfall may lag by a few hours). Use this for tiebreaking. The page section header is `Legacy` — grep from there.
+
+**Announcement archive (timeline of changes):** https://magic.wizards.com/en/news/announcements
+
+## Citation discipline
+
+Every Legacy legality claim in an analysis output must include:
+- The fetch date of the banlist consulted
+- Source: `Scryfall API banned:legacy` OR `Wizards B&R - Legacy section`
+- If older than 24 hours, refetch before citing
+
+Why no snapshot in this file: banlists drift every few months. Any in-file copy is wrong shortly after it's pasted. The skill enforces fetch-before-claim — there is intentionally no inline fallback to undermine that discipline.
+
+Do NOT paste a cached banlist into this file. Reference tables document HOW to fetch, never WHAT was last fetched.
+
+If you can't reach EITHER URL, say so explicitly and refuse to claim ban status — do NOT fall back to memory.
 
 ---
 

@@ -35,13 +35,20 @@ This applies to **every** card you cite — not only the ones being analyzed. Ca
 
 **Step 2 — Verify Oracle text via Scryfall API.** `WebFetch` returns 403 against `api.scryfall.com`. Use `curl` with `User-Agent` + `Accept` headers — see the Scryfall block under "Tooling" below for the exact command and batch loop. Capture: Oracle text, type, subtypes, mana value, MDFC faces. Re-verify every card before citing.
 
-**Step 3 — Verify the format ban list.** curl `https://magic.wizards.com/en/banned-restricted-list` and grep the format section directly (see "B&R" tooling block). No banlist is cached in this skill. Cite the URL and fetch date. If unreachable, refuse to assert ban status.
+**Step 3 — Verify the format ban list.** Prefer the Scryfall API banlist endpoint (parseable JSON, faster) over the Wizards HTML page:
+
+- **Primary:** `https://api.scryfall.com/cards/search?q=banned%3A<format>&order=name` (replace `<format>` with `legacy` or `modern`). Returns full card objects in `data[]`. Filter `border_color != "silver"` to exclude joke entries. Verified counts as of 2026-05-25: Legacy 169, Modern 52.
+- **Secondary (tiebreaker, especially on B&R announcement day where Scryfall may lag):** `https://magic.wizards.com/en/banned-restricted-list`, grep section per format.
+
+Use the `curl` block in Tooling below for both. No banlist is cached in this skill. Cite the URL + fetch date + source (`Scryfall API banned:<format>` or `Wizards B&R - <format> section`). If both URLs unreachable, refuse to assert ban status — do not fall back to memory.
+
+Per-format reference for verification URLs: `reference-tables/<format>.md` "Live Banlist Verification Sources" section.
 
 **Step 4 — Verify current meta archetypes.** Pull top 10 by share from mtgtop8 (curl with UA works; mtgdecks and aetherhub are Cloudflare-blocked — see the source-reliability matrix below). Note the date and `meta=` code.
 
-**Step 4b — Verify deck PRESENCE, not just card existence.** Before claiming an interaction matters (e.g., "Chalice@2 catches Counterspell"), confirm the target card is **actually mainboarded** in current decklists. First check `samples/` for a recent sample of that archetype (see **Using Sample Decklists** below for the staleness check); if the sample is fresh and you only need 1 deck per archetype, that's enough. For 2–3 decklists per archetype (the standard for inclusion claims), parse live from mtgtop8 with the parser below. Drop any interaction claim whose target card is absent. Card legality ≠ card play rate.
+**Step 4b — Verify deck PRESENCE, not just card existence.** Before claiming an interaction matters (e.g., "Chalice@2 catches Counterspell"), confirm the target card is **actually mainboarded** in current decklists. First check `samples/<format>/` (e.g., `samples/legacy/`) for a recent sample of that archetype (see **Using Sample Decklists** below for the staleness check); if the sample is fresh and you only need 1 deck per archetype, that's enough. For 2–3 decklists per archetype (the standard for inclusion claims), parse live from mtgtop8 with the parser below. Drop any interaction claim whose target card is absent. Card legality ≠ card play rate.
 
-**Step 5 — Identify critical interactions.** Subtypes, mana value (not paid cost), mana vs activated abilities, MDFC graveyard semantics, trigger conditions, **and the "already-resolved permanent" semantics** — Chalice / Trinisphere / Thalia / Sphere only tax future casts; they don't undo permanents that already resolved. See `reference-tables.md`.
+**Step 5 — Identify critical interactions.** Subtypes, mana value (not paid cost), mana vs activated abilities, MDFC graveyard semantics, trigger conditions, **and the "already-resolved permanent" semantics** — Chalice / Trinisphere / Thalia / Sphere only tax future casts; they don't undo permanents that already resolved. See `reference-tables/<format>.md` (e.g., `reference-tables/legacy.md`).
 
 **Step 6 — Compute probabilities in Python.** Never write "approximately X%". Use `python3` with `math.comb` (template under "Tooling" below). For tempo questions, ALSO compute the conditional: P(your lock card resolves BEFORE opp's threats deploy). Chalice on the draw against tempo is often "too late" — ~95% of opponents deploy a T1 threat.
 
@@ -422,9 +429,9 @@ def archetype_similarity(user_mainboard, sample_files):
     return sorted(results, key=lambda r: -r[1])
 
 # Usage:
-# >>> archetype_similarity(user_mb, glob.glob("samples/Legacy_*.txt"))
-# [('samples/Legacy_UR_Tempo_by_silviawataru.txt', 78.4, 23),
-#  ('samples/Legacy_Dimir_Tempo_by_kyataoka.txt', 41.2, 14),
+# >>> archetype_similarity(user_mb, glob.glob("samples/legacy/Legacy_*.txt"))
+# [('samples/legacy/Legacy_UR_Tempo_by_silviawataru.txt', 78.4, 23),
+#  ('samples/legacy/Legacy_Dimir_Tempo_by_kyataoka.txt', 41.2, 14),
 #  ...]
 ```
 
@@ -595,16 +602,18 @@ Two kinds of opt-in content. Each loads only when the analysis needs it.
 
 - **`mtg-card-evaluation`** — Five-lens scoring framework for "does card X fit deck Y" with worked examples. Invoke via `Skill` tool with `skill='mtg-card-evaluation'` whenever the question is specifically about whether a single card belongs in a single deck (inclusion, replacement-after-ban, sideboard slot, set-release evaluation). Treat its scorecard + verdict as the inclusion answer; integrate it into your evidence-labeled response. Do NOT inline the five lenses by hand — invoke the skill so its tests and worked examples stay authoritative.
 
-### Supporting files in this skill — load via `Read`
+### Supporting files in this skill — load via `Read`, branched by format
 
-- `reference-tables.md` — Card-name pitfalls (Workshop confusion, Tamiyo MV, Counterspell-not-actually-played), mana-value rules, Chalice / Bowmasters / Wasteland reference, Locus / Urza / Tron geometry, permanent-immunity caveat, "looks played but isn't" list, Legacy staples / manabase / sideboard / combo tables.
-- `samples/` — Real Legacy decklists captured at a known date (`samples/README.md` is the index — archetype, player, tournament, source URL, fetch date per file). See the **Using Sample Decklists** section below for when to consult them.
+- **`reference-tables/<format>.md`** — Per-format pitfalls, mana-value rules, lock-card references, manabase/sideboard/combo tables, AND the Live Banlist Verification Sources for that format. Choose based on the format identified at the start of the analysis (Legacy → `reference-tables/legacy.md`; Modern → `reference-tables/modern.md`).
+- **`samples/<format>/`** — Real decklists for that format, captured at a known date. The `samples/<format>/README.md` indexes them by archetype, player, tournament, source URL, fetch date. See the **Using Sample Decklists** section below for when to consult them.
 
 The Skill tool loads `SKILL.md` only. All tooling commands are inline above — supporting files contain reference data, not procedural steps. The sibling `mtg-card-evaluation` skill is a separate skill load, not a Read of a file inside this directory.
 
+**Note on format-awareness:** Phase 1 of the multi-format restructure has moved Legacy data into `reference-tables/legacy.md` and `samples/legacy/`. Modern data is stubbed at `reference-tables/modern.md` and `samples/modern/README.md` pending Phase 3–4 (see `PLAN-modern-mode-b.md`). The mandatory format-identification Step 0 lands in Phase 2.
+
 ## Using Sample Decklists
 
-The `samples/` directory contains real tournament decklists captured at a known date (currently May 2026). The index `samples/README.md` lists each file's archetype, player, tournament, mtgtop8 source URL, and fetch date.
+The `samples/<format>/` directory contains real tournament decklists for that format, captured at a known date (Legacy samples currently May 2026; Modern samples populated in Phase 3 of `PLAN-modern-mode-b.md`). The index `samples/<format>/README.md` lists each file's archetype, player, tournament, mtgtop8 source URL, and fetch date.
 
 ### When to use samples (two valid cases)
 
@@ -615,7 +624,7 @@ The `samples/` directory contains real tournament decklists captured at a known 
 ### When samples are NOT enough (require live fetch)
 
 - Any question about **current meta share** — samples are one decklist each, not a sample of the population. Use mtgtop8's format page for percentages.
-- The sample's fetch date predates a B&R announcement or set release that has happened since. Check `samples/README.md`'s date column; if stale, refetch.
+- The sample's fetch date predates a B&R announcement or set release that has happened since. Check the format's `samples/<format>/README.md` date column; if stale, refetch.
 - Step 4b says "2–3 sample decklists per top archetype" — that's the requirement for inclusion claims. If you cite "Card X is played in archetype Y" based on a SINGLE sample, you have not satisfied Step 4b — fetch live for more lists.
 
 ### Why this is not a contradiction of "don't cache"
@@ -624,7 +633,7 @@ The "don't cache Oracle text / banlist" rule applies to authoritative facts that
 
 ### Input format for user-pasted decklists
 
-Samples in `samples/*.txt` use the canonical mtgtop8 export format — the same format users commonly paste:
+Samples in `samples/<format>/*.txt` use the canonical mtgtop8 export format — the same format users commonly paste:
 
 ```
 4 Brainstorm
@@ -646,11 +655,11 @@ After parsing, sum the counts; reject a paste where mainboard ≠ 60 (or ≠ 80 
 
 ### Regression-testing the skill itself
 
-When you change `SKILL.md` or `reference-tables.md`, run analysis against at least one sample (e.g., `samples/Legacy_Doomsday_by_Sinflower.txt`) before committing. Confirm the updated workflow still produces a sensible analysis — catches drift between the workflow description and how Claude actually acts on it.
+When you change `SKILL.md` or any `reference-tables/<format>.md`, run analysis against at least one sample (e.g., `samples/legacy/Legacy_Doomsday_by_Sinflower.txt`) before committing. Confirm the updated workflow still produces a sensible analysis — catches drift between the workflow description and how Claude actually acts on it.
 
 ### Sample staleness check
 
-Each entry in `samples/README.md` has a fetch date. Before relying on a sample, scan recent B&R announcements:
+Each entry in `samples/<format>/README.md` has a fetch date. Before relying on a sample, scan recent B&R announcements:
 
 ```bash
 curl -sSL -H "User-Agent: mtg-deck-analysis/1.0" \
@@ -675,3 +684,5 @@ v3 also consolidated `tooling-notes.md` into this file since the skill is manual
 GREEN-verified by subagent test 2026-05-25: applied to a fresh Trinisphere meta question, the agent correctly used curl+headers for Scryfall, parsed 27 real mtgtop8 decklists for Step 4b, computed exact hypergeometric probabilities in Python, and discussed the resolved-permanent caveat. All 7 rubric points passed.
 
 v4 (2026-05-25): repo restructured — each skill is its own folder at the repo root. The five-lens inclusion framework moved out of this directory (`mtg-card-evaluation.md`) and became a sibling skill (`mtg-card-evaluation/SKILL.md`), invoked via the Skill tool when an inclusion question arises. Motivation: name-folder correspondence so each skill installs independently, and the inclusion framework is reusable (callable standalone via `/mtg-card-evaluation`, not gated behind a full deck-analysis pass).
+
+v5 Phase 1 (2026-05-25): multi-format restructure preparation. Per `PLAN-modern-mode-b.md`. File moves: `reference-tables.md` → `reference-tables/legacy.md`; `samples/` → `samples/legacy/`. Stubs created for Modern: `reference-tables/modern.md` (Live Banlist sources canonical, rest TODO Phase 4) and `samples/modern/README.md` (TODO Phase 3). Step 3 updated to prefer Scryfall API banlist endpoint (`https://api.scryfall.com/cards/search?q=banned%3A<format>`) over Wizards HTML, with both URLs documented per format in their `reference-tables/<format>.md`. **Phase 1 leaves the skill fully functional for Legacy** via the new paths; Modern data populates in Phases 3–4. Step 0 (mandatory format identification) lands in Phase 2.

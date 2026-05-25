@@ -54,6 +54,11 @@ CANTRIP_POOLS = {
         "Mishra's Bauble",  # MV 0, look at top of any library; draw next upkeep
         "Stock Up",         # MV 3, look 5 + take 2 (NOT a cheap cantrip but is in the family)
         "Flow State",       # MV 2, look 3 + take 1 (or 2 with delirium-light)
+        "Lorien Revealed",  # Cast mode draws 3; alt mode Islandcycling {1} (NOT channel) fetches Island. Math uses cast mode. — legal in legacy
+        "Thundertrap Trainer",  # MV 2, impulse draw on attack — legal in legacy
+        "Reckless Impulse",     # MV 2, impulse draw — legal in legacy
+        "Wrenn's Resolve",      # MV 2, impulse draw — legal in legacy
+        "Manamorphose",         # MV 2, ritual + draw 1 — legal in legacy
     ],
     "modern": [
         # Verified Scryfall 2026-05-25: legal in modern, draw/filter effect
@@ -118,16 +123,16 @@ WASTELAND_ANALOG = {
 CHALICE_VULNERABILITY = {
     "legacy": {
         1: ["Brainstorm", "Ponder", "Preordain", "Lightning Bolt", "Daze",
-            "Delver of Secrets", "Dragon's Rage Channeler", "Aether Vial",
-            "Wasteland (NO — MV 0)"],  # marked for spot-check
+            "Delver of Secrets", "Dragon's Rage Channeler", "Aether Vial"],
         0: ["Lotus Petal", "Mox Diamond", "Mox Opal", "Mishra's Bauble"],
-        2: ["Bowmasters", "Force of Negation", "Snapcaster Mage",
-            "Murktide Regent (MV varies — verify)", "Counterspell"],
+        2: ["Orcish Bowmasters", "Force of Negation", "Snapcaster Mage",
+            "Counterspell"],
     },
     "modern": {
         1: ["Lightning Bolt", "Ragavan, Nimble Pilferer", "Galvanic Discharge",
-            "Slickshot Show-Off", "Monastery Swiftspear", "Dragon's Rage Channeler"],
-        0: ["Mox Opal", "Mishra's Bauble", "Vexing Bauble"],
+            "Slickshot Show-Off", "Monastery Swiftspear", "Dragon's Rage Channeler",
+            "Vexing Bauble"],
+        0: ["Mox Opal", "Mishra's Bauble"],
         2: ["Cori-Steel Cutter", "Phelia, Exuberant Shepherd", "Counterspell",
             "Expressive Iteration", "Talisman of Resilience"],
     },
@@ -154,7 +159,7 @@ FORMAT_CODES = {
 
 
 # ---------------------------------------------------------------------------
-# Module self-check (run with: python3 format-data.py)
+# Module self-check (run with: python3 format_data.py)
 # ---------------------------------------------------------------------------
 
 def _self_check() -> None:
@@ -168,19 +173,21 @@ def _self_check() -> None:
         ("CHALICE_VULNERABILITY", CHALICE_VULNERABILITY),
         ("FORMAT_CODES", FORMAT_CODES),
     ]:
-        assert set(d.keys()) == expected, f"{name} keys != {expected}"
+        if not set(d.keys()) == expected:
+            raise ValueError(f"{name} keys != {expected}")
 
     # Cantrip pools have no duplicates
     for fmt, pool in CANTRIP_POOLS.items():
-        assert len(pool) == len(set(pool)), f"CANTRIP_POOLS[{fmt}] has duplicates"
+        if not len(pool) == len(set(pool)):
+            raise ValueError(f"CANTRIP_POOLS[{fmt}] has duplicates")
 
     # FORMAT_CODES has the expected inner keys
     for fmt, codes in FORMAT_CODES.items():
-        assert set(codes.keys()) == {"mtgtop8_f", "scryfall_banned_query",
-                                      "wizards_section_anchor"}, \
-            f"FORMAT_CODES[{fmt}] missing expected keys"
+        if not set(codes.keys()) == {"mtgtop8_f", "scryfall_banned_query",
+                                      "wizards_section_anchor"}:
+            raise ValueError(f"FORMAT_CODES[{fmt}] missing expected keys")
 
-    print(f"format-data.py self-check OK")
+    print("format_data.py self-check OK")
     print(f"  Legacy cantrips:  {len(CANTRIP_POOLS['legacy'])}")
     print(f"  Modern cantrips:  {len(CANTRIP_POOLS['modern'])}")
     print(f"  Sample dirs:      {ARCHETYPE_SAMPLE_DIRS}")

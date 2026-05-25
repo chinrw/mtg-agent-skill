@@ -2,40 +2,49 @@
 
 Two Claude Code [Agent Skills](https://agentskills.io) for rigorous Magic: The Gathering analysis. Both enforce a verification-first workflow that prevents the most common failure modes when LLMs reason about MTG: stale card text from training data, outdated ban lists, hallucinated meta percentages, and lock-piece interactions that ignore the resolved-permanent rule.
 
+**Status:** v5 multi-format (Legacy + Modern) + Mode B card-in-meta release shipped 2026-05-25. `PLAN-modern-mode-b.md` will be archived in a future cleanup commit.
+
 ## Skills in this repo
 
-| Skill | Folder | What it answers |
-|---|---|---|
-| [`mtg-deck-analysis`](./mtg-deck-analysis) | `mtg-deck-analysis/` | Decklist evaluation, matchup prediction, probability math, meta positioning |
-| [`mtg-card-evaluation`](./mtg-card-evaluation) | `mtg-card-evaluation/` | "Does card X belong in deck Y?" — five-lens scoring framework for inclusion/replacement/sideboard slot decisions |
+| Skill | Folder | Formats | What it answers |
+|---|---|---|---|
+| [`mtg-deck-analysis`](./mtg-deck-analysis) | `mtg-deck-analysis/` | Legacy, Modern | Decklist evaluation, matchup prediction, probability math, meta positioning |
+| [`mtg-card-evaluation`](./mtg-card-evaluation) | `mtg-card-evaluation/` | Legacy, Modern | Mode A: "Does card X belong in deck Y?" (five-lens scorecard). Mode B: "How does card X fit in the current format meta?" (six-lens card-in-meta positioning with Tier verdict) |
 
 Both skills are configured with `disable-model-invocation: true`. They do not auto-load into context. Invoke them explicitly:
 
 ```
 /mtg-deck-analysis analyze the current Legacy meta against Death & Taxes
+/mtg-deck-analysis Modern: how does Boros Aggro race Ruby Storm game 1?
 /mtg-card-evaluation should I add Chalice of the Void to my Blue Post list?
+/mtg-card-evaluation evaluate Boseiju, Who Endures in Modern May 2026
 ```
 
 `mtg-deck-analysis` invokes `mtg-card-evaluation` automatically (via the Skill tool) when a deck-analysis run hits an inclusion question. You don't need to chain them by hand.
 
 ## What `mtg-deck-analysis` does
 
-When you invoke it, Claude runs a 7-step workflow on any MTG decklist or meta question:
+When you invoke it, Claude runs an 8-step workflow on any MTG decklist or meta question (Legacy or Modern):
 
+0. **Identify the format** (mandatory Step 0) — accept an explicit `Legacy:` / `Modern:` prefix, or detect via format-disjoint cards (Wasteland → Legacy; Ragavan / Wrenn and Six / Murktide → Modern). Ambiguous? Ask. Never silently default. The bound format string drives every subsequent path: `reference-tables/<format>.md`, `samples/<format>/`, mtgtop8 format code (`LE` vs `MO`), B&R section.
 1. **Read literally** — flag every uncertain card
 2. **Verify Oracle text via Scryfall API** — actual `curl` commands with proper headers (the API rejects unidentified bot traffic)
-3. **Verify the format ban list** — live fetch from Wizards, never cached
-4. **Verify current meta archetypes** — pulled from tournament aggregators
-5. **Verify deck PRESENCE, not just card existence** — parse 2–3 real decklists per top archetype; "card legal" ≠ "card played"
-6. **Identify critical interactions** — subtypes, mana value vs paid cost, MDFC semantics, the "resolved permanents are immune to lock cards" rule
+3. **Verify the format ban list** — prefer the **Scryfall API banlist endpoint** (`?q=banned%3A<format>`, parseable JSON) over WebFetch of the Wizards B&R HTML page; cite both. Never cached.
+4. **Verify current meta archetypes** — pulled from tournament aggregators (mtgtop8 `f=LE` for Legacy, `f=MO` for Modern)
+5. **Verify deck PRESENCE, not just card existence** — parse 2–3 real decklists per top archetype from `samples/<format>/` and live mtgtop8; "card legal" ≠ "card played"
+6. **Identify critical interactions** — subtypes, mana value vs paid cost, MDFC semantics, channel-instant-speed (e.g., Boseiju), the "resolved permanents are immune to lock cards" rule
 7. **Compute probabilities in Python** — hypergeometric via `math.comb`, never "approximately X%"
 8. **Label evidence types** — sourced fact / verified data / inference / recommendation, never mixed
 
-The full workflow, exact `curl` commands, mtgtop8 decklist parser, and Python deterministic validators (manabase legality, 4-of check, archetype similarity, joint-probability, cantrip-depth) all live inline in `mtg-deck-analysis/SKILL.md`.
+The full workflow, exact `curl` commands, mtgtop8 decklist parser, and Python deterministic validators (manabase legality, 4-of check, archetype similarity, joint-probability, cantrip-depth) live inline in `mtg-deck-analysis/SKILL.md`. Per-format constants (cantrip pools, Wasteland analog, archetype sample directories, format codes) live in `mtg-deck-analysis/format_data.py` and are imported by the validators when a `format=` keyword arg is passed.
 
 ## What `mtg-card-evaluation` does
 
-A five-lens scorecard for inclusion questions, scored independently then summed for a verdict:
+Two question shapes, two modes. The skill picks the mode based on what the user provides (card + deck vs. card + format).
+
+### Mode A — Card in Deck (five-lens scorecard)
+
+For inclusion / swap / sideboard / replacement-after-ban decisions where a **target deck is given**. Five lenses scored independently from −2 to +2, then summed into one of five verdicts ranging from "strong include" to "don't include":
 
 | Lens | What it checks |
 |---|---|
@@ -45,7 +54,22 @@ A five-lens scorecard for inclusion questions, scored independently then summed 
 | 4. Synergy Math | Card-type triggers, opponent hate-card exposure, probability-fueled engines |
 | 5. Opportunity Cost | Whether a strictly better alternative exists |
 
-Each lens scores −2 to +2; the sum maps to one of five verdicts ranging from "strong include" to "don't include." `mtg-card-evaluation/SKILL.md` ships three worked examples — Flow State in Blue Post, Tezzeret Cruel Captain in Blue Post, and Chalice of the Void in Blue Post — that show how scoring resolves real inclusion debates.
+Mode A ships three worked examples — Flow State in Blue Post, Tezzeret Cruel Captain in Blue Post, and Chalice of the Void in Blue Post — that show how scoring resolves real inclusion debates.
+
+### Mode B — Card in Meta (six-lens card-in-meta positioning)
+
+For "where does this card fit?" / "what decks would play it?" / "is it a meta staple?" questions where a **card and a format are given but NO target deck**. Six lenses, each with the same Iron Law Evidence block as Mode A, but the verdict is **qualitative** (a meta-position Tier) rather than a numeric sum, because there is no single deck to fit against:
+
+| Lens | What it answers |
+|---|---|
+| B1. Role Identification | What role(s) the card fills, derived from verified Oracle text |
+| B2. Archetype Fit Candidates | Which top-format archetypes currently fill that role, and with what card |
+| B3. Targets / Enables | What this card answers (reactive) or enables (proactive), with meta-card counts |
+| B4. Vulnerabilities | What removes / counters / blanks this card in the current meta |
+| B5. Best Homes (Top 3) | Three most likely deck homes, each with a one-line Mode A summary scorecard |
+| B6. Meta Position | Composite verdict: **Tier A** (likely staple, 4-of in best home) / **Tier B** (situational, 1–2 of) / **Tier C** (sideboard tech only) / **Tier D** (unplayable in current meta) |
+
+Mode B ships a worked example: **Boseiju, Who Endures in Modern (May 2026)** — verified Oracle text, six Evidence blocks, Tier A verdict justified by archetype-by-archetype evidence.
 
 ## Why this exists
 
@@ -60,6 +84,8 @@ LLM reasoning about MTG fails in characteristic ways. Each rule across both skil
 | `WebFetch` returned 403 on `api.scryfall.com` | Tooling block: use `curl` with `User-Agent` + `Accept` headers |
 | Tamiyo, Inq. Student listed as MV 2 in cached reference table | Iron Law: even the skill's own references must be re-verified |
 | "Flow State will trigger 70% of the time" inferred without computing | Lens 4 of card-evaluation: use `joint_n_cards`, not estimation |
+| First Mode B preview called Boseiju "sorcery-speed nonbasic-hate" — channel is instant-speed, and the effect hits artifact/enchantment/nonbasic land (not just lands) | Mode B Iron Law: Oracle text must be **fetched live**, not recalled; applies even to the skill author writing the worked example |
+| Assumed Modern top-10 archetypes were Yawgmoth Pod / Hammer Time / Murktide; live mtgtop8 fetch on 2026-05-25 returned Boros Aggro / Affinity / Blink / Ruby Storm / Eldrazi Ramp / UR Aggro / UrzaTron / Living End / Amulet Titan / UW Control instead | Step 4: meta is **fetched on the day of analysis**, never recalled; sample directories are point-in-time snapshots and must be re-fetched when the meta shifts |
 
 Both skills are built TDD-style: every rule has a concrete past failure behind it.
 
@@ -111,14 +137,15 @@ To make either skill auto-load instead, remove `disable-model-invocation: true` 
 ```
 mtg-agent-skill/
 ├── README.md                                  # this file
-├── PLAN-modern-mode-b.md                      # multi-format + Mode B implementation plan (active)
+├── PLAN-modern-mode-b.md                      # v5 implementation plan (shipped; will be archived)
 ├── mtg-deck-analysis/                         # deck-level workflow skill (format-aware)
-│   ├── SKILL.md                               # 7-step workflow + tooling + deterministic validators
+│   ├── SKILL.md                               # Step 0 (format ID) → Step 7 + tooling + deterministic validators
+│   ├── format_data.py                         # per-format constants: CANTRIP_POOLS, WASTELAND_ANALOG, ARCHETYPE_SAMPLE_DIRS, FORMAT_CODES, etc.
 │   ├── reference-tables/                      # split per-format
-│   │   ├── legacy.md                          # Legacy pitfalls/staples/manabase + Live Banlist Verification (Scryfall API + Wizards)
-│   │   └── modern.md                          # Modern Live Banlist Verification canonical; rest TODO Phase 4
+│   │   ├── legacy.md                          # Legacy pitfalls / staples / manabase + Live Banlist Verification (Scryfall API + Wizards)
+│   │   └── modern.md                          # Modern pitfalls / staples / manabase + Live Banlist Verification (Scryfall API + Wizards)
 │   └── samples/                               # split per-format
-│       ├── legacy/                            # real Legacy decklists used as skill test input
+│       ├── legacy/                            # 10 real Legacy decklists + README index
 │       │   ├── README.md                      # index — archetype, player, tournament, source URL per file
 │       │   ├── Legacy_12_-_Post_by_sm294.txt              # Cloudpost / Blue Post (user-submitted)
 │       │   ├── Legacy_Trini_Tron_Karn_by_SinKarma.txt     # Trini Tron / Artifact Karn (user-submitted)
@@ -130,21 +157,33 @@ mtg-agent-skill/
 │       │   ├── Legacy_Doomsday_by_Sinflower.txt           # Doomsday (Tempo Flow)
 │       │   ├── Legacy_Death_and_Taxes_by_l337erhosen.txt  # Death & Taxes (Yorion 80-card)
 │       │   └── Legacy_Boros_Aggro_by_Mikebrav.txt         # Boros Aggro
-│       └── modern/                            # populated in Phase 3 of PLAN-modern-mode-b.md
-│           └── README.md                      # stub explaining target archetypes + file format
-└── mtg-card-evaluation/                       # inclusion-question + (Phase 6) card-in-meta skill
-    └── SKILL.md                               # five-lens Mode A; Mode B added in Phase 6
+│       └── modern/                            # 10 real Modern decklists + README index (fetched 2026-05-25)
+│           ├── README.md                      # index — archetype, meta share, player, tournament per file
+│           ├── Modern_Boros_Aggro_by_BigDadChad.txt       # Boros Aggro
+│           ├── Modern_Affinity_by_Tommaso_Ciampolini.txt  # Affinity
+│           ├── Modern_Blink_by_Barneygumbal.txt           # Blink (Esper variant)
+│           ├── Modern_UR_Aggro_by_Eggybenny.txt           # UR Aggro (Cutter Prowess variant)
+│           ├── Modern_UrzaTron_by_Evan_Johnson.txt        # UrzaTron
+│           ├── Modern_Ruby_Storm_by_Bernastorres.txt      # Ruby Storm
+│           ├── Modern_Eldrazi_Ramp_by_Mickael_Gervais.txt # Eldrazi Ramp (RG variant)
+│           ├── Modern_UW_Control_by_Bigatti.txt           # UW Control
+│           ├── Modern_Living_End_by_Lorenzo_Paolini.txt   # Living End
+│           └── Modern_Amulet_Titan_by_HouseOfManaMTG.txt  # Amulet Titan
+└── mtg-card-evaluation/                       # inclusion-question + card-in-meta skill
+    └── SKILL.md                               # Mode A (5-lens, deck given) + Mode B (6-lens, meta given)
 ```
 
-`SKILL.md` is what Claude Code loads when the skill is invoked. Other markdown files load via `Read` only when an analysis actually needs them, to keep context lean. Format-specific files (`reference-tables/<format>.md`, `samples/<format>/`) are selected based on the format identified at the start of the analysis.
+`SKILL.md` is what Claude Code loads when the skill is invoked. Other markdown files load via `Read` only when an analysis actually needs them, to keep context lean. Format-specific files (`reference-tables/<format>.md`, `samples/<format>/`) are selected based on the format identified at Step 0 of the analysis.
 
 ## Sample input
 
-`mtg-deck-analysis/samples/legacy/` contains real Legacy decklists used as test input when validating skill changes. See `samples/legacy/README.md` for the full index with archetype, player, tournament, and mtgtop8 source URL per file. The two original user-submitted lists (`Legacy_12_-_Post_by_sm294.txt`, `Legacy_Trini_Tron_Karn_by_SinKarma.txt`) motivated the skill — the original analysis of them surfaced most of the failure modes the skills now prevent. The remaining eight files cover one representative recent decklist per top-meta Legacy archetype (UR Tempo, Dimir Tempo, Eldrazi Aggro, UWx Control, Lands, Doomsday, Death & Taxes, Boros Aggro), fetched from mtgtop8 in May 2026.
+`mtg-deck-analysis/samples/legacy/` contains 10 real Legacy decklists used as test input when validating skill changes. See `samples/legacy/README.md` for the full index with archetype, player, tournament, and mtgtop8 source URL per file. The two original user-submitted lists (`Legacy_12_-_Post_by_sm294.txt`, `Legacy_Trini_Tron_Karn_by_SinKarma.txt`) motivated the skill — the original analysis of them surfaced most of the failure modes the skills now prevent. The remaining eight files cover one representative recent decklist per top-meta Legacy archetype (UR Tempo, Dimir Tempo, Eldrazi Aggro, UWx Control, Lands, Doomsday, Death & Taxes, Boros Aggro), fetched from mtgtop8 in May 2026.
 
-`mtg-deck-analysis/samples/modern/` is stubbed for Phase 3 of `PLAN-modern-mode-b.md` (will hold 8–10 Modern decklists matching the top-meta Modern archetypes as of fetch date).
+`mtg-deck-analysis/samples/modern/` contains 10 real Modern decklists fetched live from mtgtop8 on 2026-05-25 — one per top-meta archetype as of fetch day: Boros Aggro, Affinity, Blink (Esper variant), UR Aggro, UrzaTron, Ruby Storm, Eldrazi Ramp, UW Control, Living End, Amulet Titan. See `samples/modern/README.md` for meta share, player, tournament, and date per file. Note that the actual May-2026 Modern top 10 looked nothing like the archetypes commonly associated with the format in training data (no Yawgmoth, no Hammer Time, no Murktide UR Tempo) — a reminder that meta is fetched, never recalled.
 
-`mtg-card-evaluation` doesn't ship its own samples — its worked examples reference these same lists by archetype.
+Both sample directories are **point-in-time snapshots**. The meta shifts; re-fetch when working on a different period. Each file is plain text (`<count> <card name>` per line, `Sideboard` separates mainboard from sideboard) and carries a comment header with archetype, player, tournament, and source URL.
+
+`mtg-card-evaluation` doesn't ship its own samples — Mode A worked examples reference the Legacy lists by archetype, and the Mode B worked example (Boseiju, Who Endures in Modern) is evidenced against the Modern lists.
 
 ## Versions
 
@@ -153,7 +192,15 @@ mtg-agent-skill/
 - **v3** — consolidated `tooling-notes.md` into `SKILL.md` since the skill is manual-invoke; updated reference tables for Workshop/Tamiyo/Counterspell corrections; added 8 mtgtop8 sample decklists + Step 6b deterministic validators (manabase, 4-of, devotion, archetype-similarity, joint-N-cards, cantrip-depth); GREEN-verified by subagent on Trinisphere meta question and Doomsday validator scenarios.
 - **v4** — repo restructured to one folder per skill at repo root. Card-evaluation framework split out as its own skill (`mtg-card-evaluation`) callable standalone or as sub-skill via Skill tool; `mtg-deck-analysis` retains samples + reference-tables. Motivates from name-folder correspondence and reusability of the five-lens framework outside a full deck-analysis run.
 - **v4.1** (`mtg-card-evaluation` v2, 2026-05-25) — added Iron Law: no lens score without evidence. Each lens output now requires an Evidence block citing Scryfall / mtgtop8 / Python output / named alternative. Worked examples rewritten with concrete citations and Python computations.
-- **v5 Phase 1** (in progress) — multi-format restructure groundwork. Per `PLAN-modern-mode-b.md`. `reference-tables.md` → `reference-tables/{legacy,modern}.md`; `samples/` → `samples/{legacy,modern}/`. Modern stubs created. Both reference tables now carry "Live Banlist Verification Sources" sections documenting the Scryfall API banlist endpoint (`?q=banned%3A<format>`) alongside the Wizards B&R URL. Skill is fully functional for Legacy after Phase 1; Modern data populates in Phases 3–4, mandatory Step 0 format-identification in Phase 2, Mode B card-in-meta in Phase 6.
+- **v5** (2026-05-25, **shipped**) — multi-format (Legacy + Modern) support in `mtg-deck-analysis` and Mode B (card-in-meta) framework in `mtg-card-evaluation`. Per `PLAN-modern-mode-b.md`. Delivered in six commits:
+  - *Phase 1:* restructure `reference-tables.md` → `reference-tables/{legacy,modern}.md` and `samples/` → `samples/{legacy,modern}/`; add "Live Banlist Verification Sources" section to both reference tables (Scryfall API banlist endpoint `?q=banned%3A<format>` preferred over Wizards HTML fetch).
+  - *Phase 2:* mandatory Step 0 (format identification) added to `mtg-deck-analysis/SKILL.md`. Heuristic detection (Wasteland → Legacy; Ragavan/W6/Murktide → Modern) plus ask-if-ambiguous. Format is bound for the rest of the analysis run; refuses to proceed without it.
+  - *Phase 3:* 10 Modern sample decklists fetched live from mtgtop8 on 2026-05-25 (`f=MO`, `meta=54`) — Boros Aggro, Affinity, Blink, UR Aggro, UrzaTron, Ruby Storm, Eldrazi Ramp, UW Control, Living End, Amulet Titan.
+  - *Phase 4:* `reference-tables/modern.md` populated with Scryfall-verified Modern staples, manabase patterns (fetchlands + shocks + Triomes + MDFCs, no Wasteland), Modern interaction pitfalls (evoke-pitch elementals MV 5 not 0, channel-instant-speed, etc.), and "Looks Modern but isn't" notes — no static banlist cached.
+  - *Phase 5:* `format_data.py` module exporting `CANTRIP_POOLS`, `WASTELAND_ANALOG`, `ARCHETYPE_SAMPLE_DIRS`, `FORMAT_CODES`. Validators take `format=` keyword arg and consult this module for per-format constants; manabase color logic stays format-agnostic.
+  - *Phase 6:* Mode B (six-lens card-in-meta positioning) added to `mtg-card-evaluation/SKILL.md`. Same Iron Law as Mode A, qualitative Tier verdict (A/B/C/D) instead of numeric sum. Worked example: Boseiju, Who Endures in Modern May 2026.
+
+  Phase 7 (TDD verification) was rolled into per-phase GREEN tests at commit time; Phase 8 = this README update.
 
 See the `## TDD Status` section at the bottom of each `SKILL.md` for the running RED-failure log for that skill.
 

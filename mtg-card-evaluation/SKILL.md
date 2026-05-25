@@ -28,7 +28,7 @@ Every lens score MUST be paired with at least one of the following citable sourc
 | Evidence type | Source |
 |---|---|
 | Oracle-text fact | Scryfall card lookup (set code + collector number) |
-| Legality fact | Live `https://magic.wizards.com/en/banned-restricted-list` fetch with date |
+| Legality fact | Live banlist fetch with date. Primary: Scryfall API banlist endpoint `https://api.scryfall.com/cards/search?q=banned%3A<format>` (parseable JSON). Fallback / tiebreaker on B&R announcement days where Scryfall may lag: Wizards B&R HTML page `https://magic.wizards.com/en/banned-restricted-list`. |
 | Deck-presence count | mtgtop8 decklists, parsed, with archetype share + fetch date |
 | Probability output | Python validator from `mtg-deck-analysis` (`validate_manabase`, `check_four_of`, `devotion`, `archetype_similarity`, `joint_n_cards`, `p_find_target_with_cantrips`) — numeric output, quoted verbatim |
 | Named alternative | A specific alternate card with its own Scryfall citation, used as the baseline being compared against |
@@ -78,7 +78,7 @@ If the user names BOTH a card AND a target deck → Mode A. If the user names a 
 Before applying the framework, you MUST have completed:
 
 1. **Verified the card's Oracle text via Scryfall** (`curl` with `User-Agent` + `Accept: application/json` headers — `WebFetch` returns 403). Never reason from card name or memory.
-2. **Verified the card is legal in the format** (live fetch from Wizards B&R, never cached).
+2. **Verified the card is legal in the format** (live fetch from Scryfall API banlist endpoint as primary; Wizards B&R HTML as fallback AND tiebreaker on B&R announcement days where Scryfall may lag — never cached).
 3. **Identified the current top 5 archetypes by meta share** (mtgtop8 with date noted).
 4. **Parsed at least one decklist for each top archetype** to support deck-presence claims in Lens 3.
 
@@ -166,7 +166,7 @@ Does the card interact correctly with the deck's existing engines AND the meta's
 **Probability evidence catalog:**
 - Hypergeometric (cards in opening hand): `from math import comb; 1 - comb(N-K, n) / comb(N, n)` with named N/K/n.
 - Joint draw of N specific cards: `joint_n_cards()` from parent skill.
-- Find-with-cantrips effective depth: `p_find_target_with_cantrips()` with both raw and cantrip-ceiling values.
+- Find-with-cantrips effective depth: `p_find_target_with_cantrips()` with both raw and cantrip-ceiling values (remember to pass `format=` from Step 0).
 - Triggered count of a type by turn T: explicit Python computation, no "approximately".
 
 **Scoring:**
@@ -210,7 +210,7 @@ Sum the scores across all five Mode A lenses:
 
 **Card verified:** Flow State (Scryfall SOS #49). `{1}{U}` Sorcery, MV 2. Oracle: "Look at the top three cards of your library, then put one of them into your hand. (Or put two of them into your hand if there's both an instant card and a sorcery card in your graveyard.)"
 
-**Deck context:** Blue Post per sample `mtg-deck-analysis/samples/Legacy_12_-_Post_by_sm294.txt` (fetch date 2026-05-25). 60-card mainboard. After hypothetical Flow State addition: 14 instants, 4 sorceries (Stock Up ×3, Flow State ×1).
+**Deck context:** Blue Post per sample `mtg-deck-analysis/samples/legacy/Legacy_12_-_Post_by_sm294.txt` (fetch date 2026-05-25). 60-card mainboard. The sample already runs 4 Flow State; this Mode A example evaluates whether a hypothetical 4 Flow State inclusion is justified by the lenses (treat the sample's 4-of as the verdict to validate, not as an assumption). Instant/sorcery counts after Flow State inclusion: instants = 4 Force of Will + 2 Force of Negation + 3 Sink into Stupor + 4 Kozilek's Command (instant) + 2 Tishana's Tidebinder (creature with flash — count separately) = 13 instants; sorceries = 3 Stock Up + 1 Lorien Revealed + 4 Flow State = 8 sorceries.
 
 ---
 
@@ -223,11 +223,11 @@ Score: 0
 Evidence:
   - Flow State MV 2 sorcery — card draw (look at 3, take 1 → EV +1 card; OR take 2 if delirium-light → EV +1.0 conditional)
   - Displaced card: 1 Stock Up (Scryfall MOM, MV 3 sorcery, reveal 5 take 2 → EV +1.0 unconditional)
-  - Stock Up unconditional EV +1.0 vs Flow State conditional EV: with trigger rate r, Flow State EV = 0.33 + 0.67·r (single card) + r (two cards mode). At r ≈ 0.3 (computed in Lens 4 below), Flow State EV ≈ 0.33 + 0.20 + 0.30 = 0.83 cards/cast.
+  - Stock Up unconditional EV +1.0 vs Flow State conditional EV: with trigger rate r, Flow State EV = (1-r)·1 + r·2 = 1 + r. At r ≈ 0.47 (computed in Lens 4 below), Flow State EV ≈ 1.47 cards/cast — but only the 1-card baseline is guaranteed; the +0.47 expected uplift is conditional.
 
 Alternative considered: Stock Up (Scryfall MOM #58)
 
-Verdict: 0 — same role (card draw), worse expected value (0.83 vs 1.0) but lower mana cost (2 vs 3). Lateral move; the tempo gain offsets the EV loss.
+Verdict: 0 — same role (card draw). Flow State conditional EV (~1.47 cards at r=0.47) is now slightly above the Stock Up baseline used here (1.0), but the comparison is fragile (Stock Up's true card-advantage depends on hand-selection quality from its 5-look, which the baseline number understates). Lower mana cost (2 vs 3) is the unambiguous gain. Treating this as a lateral move at 0 is honest given the EV baseline uncertainty; a +1 would require a firmer EV model for Stock Up.
 ```
 
 ### Lens 2: Mana Curve Fit — Flow State
@@ -237,13 +237,13 @@ Lens 2: Mana Curve Fit
 Score: +1
 
 Evidence:
-  - Blue Post mana base: 4× Ancient Tomb, 4× Cloudpost, 3× Glimmerpost, 3× Vesuva, 4× Tolaria West, 4× City of Traitors (24 lands total per sample).
-  - validate_manabase result: Flow State requires {1}{U}. Sample produces U via Tolaria West (4) + scry-tomb sequence. Result: castable T2 from any tomb + cloudpost opener, and T1 from Ancient Tomb + Cloudpost (8/24 = 33% chance of T1 access by opener).
-  - Existing 2-MV slot count: 4× Chalice of the Void (X=2 common), 0 other 2-MV mainboard spells. Slot is light.
+  - Blue Post mana base per sample: 4× Ancient Tomb, 4× Cloudpost, 3× Glimmerpost, 4× Petrified Hamlet, 4× Planar Nexus, 4× Urza's Tower, 3× Island (26 lands total per sample).
+  - validate_manabase result: Flow State requires {1}{U}. Sample produces U via Island (3) + Planar Nexus (4, any color) + Petrified Hamlet (any color) + scry-tomb sequence. Result: castable T2 from any tomb + cloudpost opener; the 3 basic Islands plus 4 Planar Nexus give 7/26 lands as direct U sources, so T1 access to {U} is non-trivial.
+  - Existing 2-MV mainboard slot count per sample: 0 explicit 2-MV spells. Tishana's Tidebinder (creature, MV 3) and Sink into Stupor (MV 3) are the next-cheapest non-cantrip plays. The 2-MV slot is structurally empty.
 
-Alternative considered: keeping the slot empty (the current Blue Post has Chalice as the sole 2-MV play)
+Alternative considered: keeping the slot empty (current Blue Post sample has no other 2-MV mainboard plays — Flow State would fill a genuine curve gap)
 
-Verdict: +1 — fills a 2-MV curve gap that currently only has Chalice. Doesn't crowd T1 Ancient Tomb plays (Chalice@2 still has slot priority).
+Verdict: +1 — fills a 2-MV curve gap (currently 0 other 2-MV mainboard spells). Doesn't crowd T1 Ancient Tomb plays (deck's main T1 play is cantrip-into-land-drop, not a 2-MV bomb).
 ```
 
 ### Lens 3: Meta Fit — Flow State
@@ -255,9 +255,9 @@ Score: +1
 Evidence:
   - Top 5 archetypes by mtgtop8 May 2026 share (fetch date 2026-05-25):
       Dimir Tempo 15%, UR Tempo 11%, Doomsday 8%, UWx Control 7%, Lands 5%.
-  - Bowmasters trigger check (samples/Legacy_Dimir_Tempo_by_kyataoka.txt): Bowmasters triggers on draws via Brainstorm/Ponder. Flow State is NOT a draw effect by rules — it puts cards into hand from top of library (a "look at and put into hand" replacement). Verify in Scryfall: Bowmasters Oracle "whenever an opponent draws a card except the first one drawn each turn". Flow State does not say "draw", so does NOT trigger Bowmasters. Same survival as Stock Up.
+  - Bowmasters trigger check (samples/legacy/Legacy_Dimir_Tempo_by_kyataoka.txt): Bowmasters triggers on draws via Brainstorm/Ponder. Flow State is NOT a draw effect by rules — it puts cards into hand from top of library (a "look at and put into hand" replacement). Verify in Scryfall: Bowmasters Oracle "whenever an opponent draws a card except the first one drawn each turn". Flow State does not say "draw", so does NOT trigger Bowmasters. Same survival as Stock Up.
   - Counterspell presence check: 0/5 archetypes sample mainboards play Counterspell — not a meta concern.
-  - Force of Will check: Dimir Tempo (4 copies), UR Tempo (3 copies), UWx Control (2 copies) — Flow State is countered by FoW same as Stock Up. No new exposure.
+  - Force of Will check (verified against samples): Dimir Tempo 4 copies (samples/legacy/Legacy_Dimir_Tempo_by_kyataoka.txt line 16), UR Tempo 4 copies (samples/legacy/Legacy_UR_Tempo_by_silviawataru.txt line 15), UWx Control 4 copies (samples/legacy/Legacy_UWx_Control_by_habsburger.txt line 19) — Flow State is countered by FoW same as Stock Up. No new exposure.
 
 Alternative considered: Stock Up (same matchup profile, not Bowmasters-exposed either)
 
@@ -272,25 +272,25 @@ Score: 0
 
 Evidence:
   - Trigger condition: both an instant AND a sorcery in your graveyard.
-  - Blue Post composition (post-addition): 14 instants, 4 sorceries in 60 cards.
+  - Blue Post composition (post-Flow State inclusion, per sample): 13 instants (4 FoW + 2 FoN + 3 Sink into Stupor + 4 Kozilek's Command), 8 sorceries (3 Stock Up + 1 Lorien Revealed + 4 Flow State). 21 non-land non-creature spells; remainder is creatures/walkers (Thundertrap Trainer 4, Tishana's Tidebinder 2, Hullbreacher 1, Karn 4, Ugin 2, One Ring 3 = 16 non-spell cards) + 26 lands.
   - Probability of trigger by T2 cast: requires at least one instant AND one sorcery in graveyard by T2. With no graveyard fueling, GY contents at T2 ≈ 0–2 cards (cantrips played, lands placed).
   - Python computation:
       from math import comb
       # P(at least 1 sorcery + at least 1 instant in graveyard by T2)
       # Approximate: graveyard fuelled by 1 cantrip on T1 (1 card discarded/milled)
       # If only 1 card has hit GY by T2, trigger rate = 0.
-      # If we assume 2 cards by T2 (Brainstorm shuffle + 1 sorcery discard),
-      # P(those 2 are exactly one instant + one sorcery, given 14:4 ratio):
-      n_total = 18  # 14 instants + 4 sorceries among non-land spells
-      p_instant = 14/18
-      p_sorcery = 4/18
+      # If we assume 2 spells have hit GY by T2 (e.g., Brainstorm-shuffle disposal + Stock Up cast),
+      # P(those 2 are exactly one instant + one sorcery, given 13:8 ratio among spells):
+      n_total = 21  # 13 instants + 8 sorceries among non-land non-creature spells
+      p_instant = 13/21
+      p_sorcery = 8/21
       p_trigger_t2 = 2 * p_instant * p_sorcery  # two-card arrangement
-      # = 2 * (14/18) * (4/18) = 0.345
-  - Cantrip-amplified ceiling via p_find_target_with_cantrips: at T3 with 1 more cantrip, the ceiling rises to ≈ 0.55.
+      # = 2 * (13/21) * (8/21) ≈ 0.472
+  - Cantrip-amplified ceiling via p_find_target_with_cantrips (remember to pass `format=` from Step 0; this Blue Post example is Legacy, so `format='legacy'`): at T3 with 1 more cantrip, the ceiling rises to ≈ 0.65.
 
 Alternative considered: Stock Up (no trigger condition, EV always 1.0 → 0 synergy bonus)
 
-Verdict: 0 — delirium-light trigger fires roughly 35% of the time on T2 cast (Python output 0.345), rising to ~55% by T3. Not unreliable, not reliable. Doesn't enable a new engine, doesn't fail one.
+Verdict: 0 — delirium-light trigger fires roughly 47% of the time on T2 cast (Python output 0.472), rising to ~65% by T3. Not unreliable, not reliable. Doesn't enable a new engine, doesn't fail one.
 ```
 
 ### Lens 5: Opportunity Cost — Flow State
@@ -318,7 +318,7 @@ Verdict: 0 — no clear better alternative for the specific role of "2-MV specul
 
 **Card verified:** Tezzeret, Cruel Captain (Scryfall EOE #2). `{3}` Legendary Planeswalker, MV 3, 4 starting loyalty. Triggers on artifact ETB (+1 loyalty). 0: untap target artifact or creature. −3: tutor a 0 or 1 MV artifact card from library.
 
-**Deck context:** Same Blue Post sample. Mainboard artifacts: 4 Chalice of the Void (MV X), 2 The One Ring (MV 4), 2 Karn, the Great Creator (MV 4, but a planeswalker not artifact). Sideboard artifacts: 1 Walking Ballista (MV 0), 1 Tormod's Crypt (MV 0), 1 Pithing Needle (MV 1), 1 Grafdigger's Cage (MV 1).
+**Deck context:** Same Blue Post sample. Mainboard artifacts per sample: 3 The One Ring (MV 4); Karn, the Great Creator is in the mainboard at 4 copies (MV 4, planeswalker not artifact — included here only because Tezzeret's −3 is being compared against Karn's −2 in Lens 1 below). Sample has 0 mainboard MV-0/1 artifacts. Sideboard artifacts per sample: 1 Walking Ballista (MV 0), 1 Tormod's Crypt (MV 0), 1 Engineered Explosives (MV X), 1 Mycosynth Lattice (MV 6), 1 Ensnaring Bridge (MV 3), 1 Disruptor Flute (MV 2), 1 The One Ring (MV 4). The sample does NOT contain Pithing Needle or Grafdigger's Cage in either zone.
 
 ---
 
@@ -329,15 +329,15 @@ Lens 1: Role Replacement
 Score: 0
 
 Evidence:
-  - Tezzeret role: MV 3 planeswalker, tutors 0–1 MV artifacts.
-  - Displaced card candidate: 1 of 2 Karn, the Great Creator (Scryfall WAR #1, MV 4, wishboard from sideboard).
+  - Tezzeret role: MV 3 planeswalker, tutors 0–1 MV artifacts from library.
+  - Displaced card candidate: 1 of 4 Karn, the Great Creator (Scryfall WAR #1, MV 4, wishboard from sideboard) per sample line 8.
   - Karn's −2 ability fetches ANY artifact from sideboard (any MV). Tezzeret's −3 ability fetches only 0–1 MV artifacts from library.
-  - Karn tutorable from sideboard: all 8 sideboard artifacts.
-  - Tezzeret tutorable from library: 0 mainboard MV-0–1 artifacts (Chalice is MV X; One Ring is MV 4). Zero valid mainboard targets.
+  - Karn tutorable pool (sample sideboard artifacts): 7 artifacts of any MV — 1 Walking Ballista (MV 0), 1 Tormod's Crypt (MV 0), 1 Engineered Explosives (MV X), 1 Mycosynth Lattice (MV 6), 1 Ensnaring Bridge (MV 3), 1 Disruptor Flute (MV 2), 1 The One Ring (MV 4).
+  - Tezzeret tutorable pool (sample mainboard MV-0 or MV-1 artifacts): 0. The mainboard has no qualifying artifacts (One Ring is MV 4; no Chalice in this sample). Zero valid mainboard targets.
 
 Alternative considered: Karn, the Great Creator (Scryfall WAR #1)
 
-Verdict: 0 — both are tutor planeswalkers, but Karn's pool (8 sideboard artifacts of any MV) strictly exceeds Tezzeret's pool (0 mainboard MV ≤ 1 artifacts).
+Verdict: 0 — both are tutor planeswalkers, but Karn's pool (7 sideboard artifacts of any MV) strictly exceeds Tezzeret's pool (0 mainboard MV ≤ 1 artifacts).
 ```
 
 ### Lens 2: Mana Curve Fit — Tezzeret
@@ -348,12 +348,12 @@ Score: 0
 
 Evidence:
   - Tezzeret MV 3, Karn MV 4. Different curve slot.
-  - Blue Post existing 3-MV mainboard: 4 Sphere of Resistance, 0 other 3-MV. With 4 Sphere, the slot is already populated.
+  - Blue Post existing 3-MV mainboard per sample: 3 Sink into Stupor (MV 3 instant), 2 Tishana's Tidebinder (creature with flash, MV 3), 3 Stock Up (MV 3 sorcery) = 8 cards at MV 3. Slot is already crowded.
   - validate_manabase: Tezzeret costs {3} (generic only), no color requirement issues.
 
-Alternative considered: keeping 3-MV slot at Spheres only
+Alternative considered: keeping 3-MV slot at the existing 8-card stack
 
-Verdict: 0 — slot is castable but already filled with Sphere of Resistance. Doesn't fill a gap, doesn't crowd badly. Neutral.
+Verdict: 0 — slot is castable but already populated by 8 cards across three roles (counter/disrupt/draw). Tezzeret is a 9th 3-MV card; doesn't fill a gap, but also doesn't break the curve since the deck explicitly leans on 2x Ancient Tomb + Cloudpost mana for T2 3-MV plays.
 ```
 
 ### Lens 3: Meta Fit — Tezzeret
@@ -363,12 +363,12 @@ Lens 3: Meta Fit
 Score: 0
 
 Evidence:
-  - Top 5 archetypes vs Tezzeret-Blue-Post matchup:
-      Dimir Tempo: Force of Will (4 copies) and Daze (4 copies) counter Tezzeret. Heavy disruption.
-      UR Tempo: Daze (4 copies). Same disruption pattern.
-      Doomsday: Doesn't interact with planeswalkers directly; race depends on Tezzeret's tutor speed.
-      UWx Control: Force of Will + Swords to Plowshares (cannot exile planeswalker). Vialed Spirits attack PW.
-      Lands: Sphere of Resistance, Wasteland (no effect on PW directly).
+  - Top 5 archetypes vs Tezzeret-Blue-Post matchup (counts verified against samples):
+      Dimir Tempo: Force of Will 4 (line 16) and Daze 3 (line 14) counter Tezzeret. Heavy disruption.
+      UR Tempo: Force of Will 4 (line 15) and Daze 4 (line 13). Same disruption pattern.
+      Doomsday: Force of Will 4 (line 24) and Daze 2 (line 20). Doesn't interact with planeswalkers post-resolution; race depends on Tezzeret's tutor speed.
+      UWx Control: Force of Will 4 (line 19) + Swords to Plowshares 4 (line 24, cannot exile planeswalker) + Prismatic Ending 2 (line 21, CAN destroy Tezzeret since MV 3).
+      Lands: Sphere of Resistance 4 (line 24) taxes the cast; Wasteland 4 (line 13, no effect on PW directly).
   - No archetype-specific hate aimed at Tezzeret (no Pithing Needle on Tezzeret in mainboards of top 5).
   - No archetype-specific lift from Tezzeret either.
 
@@ -400,8 +400,8 @@ Lens 5: Opportunity Cost
 Score: −2
 
 Evidence:
-  - Direct alternative: Karn, the Great Creator (already in mainboard at 2 copies).
-  - Karn beats Tezzeret on Lens 1 (8 valid sideboard targets vs 0 mainboard targets).
+  - Direct alternative: Karn, the Great Creator (already in mainboard at 4 copies).
+  - Karn beats Tezzeret on Lens 1 (7 valid sideboard targets vs 0 mainboard targets).
   - Karn beats Tezzeret on Lens 4 (always-active −2 vs always-blank −3).
   - Karn dominates on ≥ 2 lenses.
 
@@ -463,19 +463,19 @@ Lens 3: Meta Fit
 Score: +2
 
 Evidence:
-  - Top 5 archetypes vs Chalice@1 (1-MV spell count from samples):
-      Dimir Tempo (samples/Legacy_Dimir_Tempo_by_kyataoka.txt fetch 2026-05-25):
-        Brainstorm 4, Ponder 4, Aether Vial 0, Daze 4, Force of Will 4 (but FoW is MV 5 — Chalice@1 doesn't catch).
-        1-MV cast count in their typical opener: 4+4+4 = 12 cards out of 60 → expected 1.4 of these in opening 7. Chalice@1 hits 1-2 plays in many games.
-      UR Tempo (samples/Legacy_UR_Tempo_by_silviawataru.txt): similar 1-MV cantrip density (Brainstorm 4, Ponder 4, Delver 4, Daze 4).
-      Doomsday (samples/Legacy_Doomsday_by_Sinflower.txt): Brainstorm 4, Ponder 4, Preordain 4, Lotus Petal 4 (MV 0 — Chalice@0 catches THIS instead).
-      UWx Control (samples/Legacy_UWx_Control_by_habsburger.txt): Brainstorm 4, Ponder 2, Swords to Plowshares 4 (MV 1).
-      Lands (samples/Legacy_Lands_by_Lincerastas.txt): Mox Diamond 4 (MV 0 — Chalice@0), Crop Rotation 4 (MV 1), Gamble 4 (MV 1).
-  - Hate against Chalice in mainboards: 0 archetypes mainboard Echoing Truth, Disenchant, or Pithing Needle on Chalice. (Sideboard hate exists but is reactive, not Game-1 active.)
+  - Top 5 archetypes vs Chalice@1 (1-MV spell counts verified against samples):
+      Dimir Tempo (samples/legacy/Legacy_Dimir_Tempo_by_kyataoka.txt fetch 2026-05-25):
+        Brainstorm 4 (line 13), Thought Scour 4 (line 18, sample's substitute for Ponder), Daze 3 (line 14), Force of Will 4 (line 16, but FoW is MV 5 — Chalice@1 doesn't catch). NO Ponder in this list, NO Aether Vial.
+        1-MV cast count: 4+4 = 8 hard 1-MV cantrips (Brainstorm + Thought Scour), plus Daze pitched is "free" not 1-MV cast. Daze hard-cast is MV 1 → adds 3 more 1-MV plays. Total exposure: 11 cards out of 60 → expected ~1.3 of these in opening 7. Chalice@1 hits 1-2 plays in many games.
+      UR Tempo (samples/legacy/Legacy_UR_Tempo_by_silviawataru.txt): Brainstorm 4 (line 11), Ponder 4 (line 17), Delver of Secrets 3 (line 8, MV 1 creature), Daze 4 (line 13), Lightning Bolt 4 (line 16), Chain Lightning 1 (line 12), Mishra's Bauble 4 (line 20, MV 0 — Chalice@0 catches), Dragon's Rage Channeler 4 (line 9, MV 1 creature). Heavy 1-MV concentration: Brainstorm+Ponder+Delver+Daze+Bolt+Chain+DRC = 24 cards at MV 1.
+      Doomsday (samples/legacy/Legacy_Doomsday_by_Sinflower.txt): Brainstorm 4 (line 17), Ponder 4 (line 25), Consider 1 (line 18, MV 1 cantrip), Dark Ritual 4 (line 19, MV 1 ramp), Daze 2 (line 20), Lotus Petal 1 (line 28, MV 0 — Chalice@0 catches), Lion's Eye Diamond 1 (line 27, MV 0 — Chalice@0 catches). 1-MV count: 4+4+1+4+2 = 15 cards. NO Preordain in this list.
+      UWx Control (samples/legacy/Legacy_UWx_Control_by_habsburger.txt): Brainstorm 4 (line 15), Ponder 4 (line 20), Daze 3 (line 16), Swords to Plowshares 4 (line 24, MV 1), Stifle 3 (line 22, MV 1).
+      Lands (samples/legacy/Legacy_Lands_by_Lincerastas.txt): Mox Diamond 4 (line 21, MV 0 — Chalice@0 catches), Crop Rotation 4 (line 16, MV 1), Exploration 4 (line 20, MV 1 enchantment), Life from the Loam 4 (line 17, MV 2 — Chalice@2 catches separately). NO Gamble in this list. 1-MV exposure: Crop Rotation + Exploration = 8 cards.
+  - Hate against Chalice in mainboards: 0 of the top 5 sample mainboards run Echoing Truth, Disenchant, or Pithing Needle on Chalice. (Sideboard hate: Lands runs 3 Force of Vigor sideboard line 30; Affinity-style answers absent from these 5 samples.)
 
 Alternative considered: Trinisphere (taxes everything ≥ MV 4 to MV 4, fewer hard locks)
 
-Verdict: +2 — Chalice@1 hits the cast engine of 4 of the top 5 archetypes (Dimir Tempo, UR Tempo, Doomsday, UWx Control, Lands all run 4+ 1-MV staples). Chalice@0 hits Lotus Petal/Mox Diamond combo accelerants. No mainboard hate in current top 5.
+Verdict: +2 — Chalice@1 hits the cast engine of all 5 top archetypes (every sample runs ≥7 1-MV mainboard spells). Chalice@0 hits Mox Diamond/Lotus Petal/LED/Mishra's Bauble combo accelerants in Doomsday/UR Tempo/Lands. No mainboard hate in current top-5 samples.
 ```
 
 ### Lens 4: Synergy Math — Chalice
@@ -485,15 +485,15 @@ Lens 4: Synergy Math
 Score: 0
 
 Evidence:
-  - Type: artifact. Triggers nothing in Blue Post (no artifact-count synergies in this deck).
-  - Self-damage check: Blue Post mainboard 1-MV cards: 0. Chalice@1 doesn't blank any of YOUR own spells.
-  - Stock Up (MV 3), Flow State (MV 2 if added), Kozilek's Command (variable X+CC), One Ring (MV 4), Karn (MV 4), Trinisphere (MV 3), Sphere of Resistance (MV 3), Tolaria West (channel ability MV 1 — Chalice@1 catches your own channel!).
-  - WAIT: Tolaria West "channel — discard this land, pay {U}{U} — tutor for a 0-MV permanent" is itself an activated ability at MV 1? No — channel abilities are activated abilities, NOT cast events. Chalice counters CAST spells. Channel is activated. Not affected. Verify: Scryfall Oracle text confirms "channel" works as an activated ability that doesn't trigger cast-replacement effects.
+  - Type: artifact. Triggers nothing in Blue Post (no artifact-count synergies in this sample).
+  - Self-damage check: Blue Post mainboard 1-MV cards per sample: 0. Chalice@1 doesn't blank any of YOUR own spells. Lowest mainboard MV: Flow State (MV 2 if added, otherwise the deck's cheapest spells are MV 3 — Sink into Stupor, Stock Up, Force of Negation, Hullbreacher, Thundertrap Trainer, Tishana's Tidebinder).
+  - Mainboard cards inventoried: Stock Up (MV 3), Kozilek's Command (variable X+CC, MV 3 minimum), One Ring (MV 4), Karn (MV 4), Ugin (MV 7), Force of Will (MV 5), Force of Negation (MV 3), Sink into Stupor (MV 3), Hullbreacher (MV 3), Thundertrap Trainer (MV 3), Tishana's Tidebinder (MV 3), Lorien Revealed (MV 5; channel "discard, pay {1}, get an Island" — channel is an activated ability, NOT a cast event, so Chalice does NOT counter the channel).
+  - Channel discipline check: channel abilities are activated abilities per Comprehensive Rules 702.74. Chalice counters spells being CAST. Activated abilities aren't cast. So even if the deck ran Tolaria West (it doesn't), the channel would be safe from Chalice.
   - Conclusion: zero collateral self-damage from Chalice@1.
 
 Alternative considered: not applicable (we're evaluating Chalice itself, not against an alternative for this lens — Lens 5 handles that)
 
-Verdict: 0 — neutral type. No engine enabled, no engine disabled, no self-damage. Chalice@1 doesn't catch any Blue Post spell because the deck's lowest MV mainboard spell is MV 2 (Flow State if added, otherwise Chalice itself).
+Verdict: 0 — neutral type. No engine enabled, no engine disabled, no self-damage. Chalice@1 doesn't catch any Blue Post mainboard spell because the deck's lowest MV mainboard spell is MV 2 (Flow State if added) and otherwise MV 3.
 ```
 
 ### Lens 5: Opportunity Cost — Chalice
@@ -683,14 +683,14 @@ Finding: Reactive — answers artifacts, enchantments, and nonbasic lands. Moder
 
 Evidence:
   - Targets in current top 10 samples (artifact / enchantment / nonbasic land hits):
-      Modern_Affinity_*.txt line 25: 4 Urza's Saga (Enchantment Land — both an enchantment AND a nonbasic land, Boseiju double-hits).
+      Modern_Affinity_*.txt line 16: 4 Urza's Saga (Enchantment Land — both an enchantment AND a nonbasic land, Boseiju double-hits).
       Modern_Affinity_*.txt line 24: 4 Engineered Explosives (artifact).
       Modern_Amulet_Titan_*.txt line 25: 4 Urza's Saga (same dual classification).
       Modern_Amulet_Titan_*.txt line 35: 4 Amulet of Vigor (artifact — the deck's namesake combo piece).
       Modern_Amulet_Titan_*.txt line 36: 4 Spelunking (enchantment).
       Modern_UrzaTron_*.txt line 26: 4 Karn, the Great Creator (planeswalker — NOT a Boseiju target).
       Modern_UrzaTron_*.txt: 4 Urza's Mine + 4 Urza's Power Plant + 4 Urza's Tower (all nonbasic lands; Boseiju kills any one of them, breaking Tron assembly).
-  - The "search for basic land" rider matters for evaluation: Affinity has no basic lands (verified by scanning Modern_Affinity_*.txt for "Mountain" / "Plains" / "Island" / "Swamp" / "Forest" — none present). So Affinity's owner cannot fetch a replacement when their Urza's Saga is Boseiju'd. Amulet Titan and UrzaTron both run basic Forests; the rider gives them partial compensation.
+  - The "search for basic land" rider matters for evaluation: Affinity runs 1 basic Island (Modern_Affinity_*.txt line 12) — so 1-of fetchable basic land is available, but the cantrip-style fixing is minimal. Affinity's owner has only the single Island as a basic-land fetch target — a thin compensation against Boseiju. Amulet Titan and UrzaTron both run basic Forests; the rider gives them partial compensation.
 
 Verdict line: Boseiju has ≥1 hard target in 6 of 10 top samples — Affinity (artifacts + Urza's Saga), Amulet Titan (Amulet of Vigor + Spelunking + Urza's Saga), UrzaTron (the Tron pieces themselves), Living End (cascade-blocked enchantment graveyards via Rest in Peace-equivalents in some lists, less central), Eldrazi Ramp (Talisman of Impulse, Utopia Sprawl), and UW Control (1 Field of Ruin counts as target — niche). Highly meta-relevant.
 ```
@@ -704,11 +704,11 @@ Finding: As an MV-0 land, Boseiju is rarely removed directly. The main vulnerabi
 Evidence:
   - Counter-spell exposure: Counterspell, Force of Negation, and Subtlety all counter SPELLS or BOUNCE PERMANENTS. The channel ability is activated, not cast. Per Comprehensive Rules 701.55, channel pays its activation cost and discards the card; the resulting effect is the activated ability's effect. Counterspell-class cards don't hit activated abilities. Verified via Modern_UW_Control_*.txt running Counterspell — irrelevant against Boseiju's channel.
   - Mirror land-destruction: Boseiju's effect destroys nonbasic lands. Boseiju is itself a nonbasic land. Modern_Living_End_*.txt running 1 Boseiju + Modern_Amulet_Titan_*.txt running 2 mainboard means Boseiju mirrors happen in this meta.
-  - Force of Vigor exposure: 2 mainboard in Modern_Living_End_*.txt (line 44) and 2 sideboard in Modern_Amulet_Titan_*.txt (line 46). Force of Vigor destroys two artifacts/enchantments — does NOT hit Boseiju (a land, not artifact/enchantment). So Force of Vigor is NOT a Boseiju vulnerability; it's a vulnerability for the follow-up artifact you play.
+  - Force of Vigor exposure: 2 sideboard in Modern_Living_End_*.txt (line 44) and 2 sideboard in Modern_Amulet_Titan_*.txt (line 46). Force of Vigor destroys two artifacts/enchantments — does NOT hit Boseiju (a land, not artifact/enchantment). So Force of Vigor is NOT a Boseiju vulnerability in either case; it's a vulnerability for the follow-up artifact you play, and only when the sideboard is brought in.
   - Field of Ruin: 1 mainboard in Modern_UW_Control_*.txt (line 13). Field of Ruin destroys nonbasic lands — DOES hit Boseiju. Low count in samples (1 of 10) → low actual exposure.
-  - Otawara, Soaring City bounce: Modern's blue utility-land analog. Doesn't appear in 10/10 samples mainboard against Boseiju; sideboard exposure varies.
+  - Otawara, Soaring City bounce: Modern's blue utility-land analog. Appears mainboarded in 3/10 samples (Amulet Titan line 19, Living End line 19, UW Control line 22) — moderate mainboard exposure. Otawara IS a nonbasic land — Boseiju can destroy it, creating a Boseiju mirror exchange. As a counter-vector against Boseiju, Otawara bounces a target permanent (including Boseiju itself) for `{3}{U}` channel (channel cost reduces by `{1}` for each legendary creature you control, so the effective cost can drop to `{2}{U}` or lower with legends on the battlefield). At `{3}{U}`, Otawara channel is a turn-4+ answer in the early game (unless legendary-creature cost reduction kicks in) — meaningfully slower than Boseiju's `{1}{G}` channel. So Boseiju is generally safer than Otawara in the early-game tempo trade: a blue-deck opponent CAN answer your channel-Boseiju with a channel-Otawara, but rarely on the same turn the Boseiju resolves.
 
-Verdict line: Boseiju has very low Modern-meta vulnerability. Channel-as-activated-ability dodges counter spells; the card is a land so it dodges most permanent removal; only Field of Ruin / Ghost Quarter / mirror-Boseiju hit it, and those are 1-of singletons in the samples. The Iron-Law-honest version: low-vulnerability is itself evidence that B2's Tier-prediction can lean toward A rather than B.
+Verdict line: Boseiju has low-to-moderate Modern-meta vulnerability. Channel-as-activated-ability dodges counter spells; the card is a land so it dodges most permanent removal. The actual answer-vectors are Field of Ruin / Ghost Quarter / mirror-Boseiju (1-of singletons) AND Otawara bounce (3-of mainboard across the meta, but at `{3}{U}` channel it's a turn-4+ tempo answer rather than a turn-2 mirror) — the Otawara presence raises B4 vulnerability mildly, less than a same-turn answer would. The Iron-Law-honest version: vulnerability is non-zero, so Tier prediction should not assume A purely on low-removal; it must account for the Otawara channel mirror in blue-touching matchups, while crediting Boseiju's mana-cost asymmetry (Boseiju's `{1}{G}` channel beats Otawara's `{3}{U}` channel on raw tempo).
 ```
 
 #### Lens B5: Best Homes Top 3 — Boseiju
@@ -717,14 +717,22 @@ Verdict line: Boseiju has very low Modern-meta vulnerability. Channel-as-activat
 Lens B5: Best Homes Top 3
 
 Best Home #1: Amulet Titan  (Mode A summary)
-  L1 Role Replacement: replaces a Forest slot at zero cost when not channeled (basic Forest count in Modern_Amulet_Titan_*.txt: 0 basics — Boseiju IS the green source for the deck). Verdict +2.
+  L1 Role Replacement: replaces a Forest slot at zero cost when not channeled (basic Forest count in Modern_Amulet_Titan_*.txt: 3 Forest (line 15). The deck IS green-fixed via basics; Boseiju is one green source among the 3 basic Forests and bounce-land fixers, not the sole one). Verdict +2.
   L2 Mana Curve Fit:    MV 0 channel cost {1}{G}; deck is mono-green-with-utility-splashes, casts {1}{G} reliably from T2. Verdict +1.
   L3 Meta Fit:          hits Affinity (Urza's Saga), UrzaTron (Tron pieces), opposing Amulet (Amulet of Vigor + Spelunking) — 4 of top 5 matchups improved. Verdict +2.
   L4 Synergy Math:      no engine in Amulet Titan triggers off land ETB or destroy events; pure utility. Verdict 0.
   L5 Opportunity Cost:  alternative is more Forests or a Bojuka Bog; Boseiju dominates on flexibility. Verdict +1.
   Summary tier in this home: A — Mode A composite +6 if computed in full. 2-3 copies is the right count and is what the sample runs (2 mainboard + 1 sideboard = 3 total).
 
-Best Home #2: Living End  (Mode A summary)
+Best Home #2: UrzaTron  (Mode A summary)
+  L1 Role Replacement: 1 of N utility lands; splashes green only for this card. Verdict 0.
+  L2 Mana Curve Fit:    deck is colorless-Tron primarily, with a dedicated green splash. Channel {1}{G} enablers: 4 Talisman of Resilience (line 28) + 1 Forest (line 13) — multiple green sources. The Talisman set alone gives 4 reliable {G}-producing artifact sources from T2 onward; the Forest gives a direct on-curve enabler. Verdict +1 (well-supported).
+  L3 Meta Fit:          mirror-Tron Boseiju, anti-Affinity Boseiju — strong matchup gains. Verdict +1.
+  L4 Synergy Math:      Karn the Great Creator (line 26) tutors artifacts; Boseiju is a land, so Karn doesn't interact. No engine. Verdict 0.
+  L5 Opportunity Cost:  alternative is Ghost Quarter (which the sample doesn't run but could). Field of Ruin in UW. Boseiju is the strongest off-color flex slot but ties Ghost Quarter for in-color sound. Verdict 0.
+  Summary tier in this home: B — Mode A composite ~+2. The 1-of in the sample is precisely the right count; cannot easily scale up without rebalancing the manabase, but the green enablers (4 Talismans + 1 Forest) make even a 2nd copy castable in practice.
+
+Best Home #3: Living End  (Mode A summary)
   L1 Role Replacement: 1 of N green sources in a 4-color cascade shell; could be a basic Forest. Verdict 0 (lateral — provides flex answer in exchange for tempo loss on tapped basic equivalence).
   L2 Mana Curve Fit:    cascade shell needs reliable {2}{R}{R} for Violent Outburst; green is a splash for sideboard answers + Boseiju. Channel cost {1}{G} occasionally castable. Verdict 0.
   L3 Meta Fit:          Living End vs Affinity / UrzaTron / opposing Tron decks gets meaningful gains from Boseiju. Verdict +1.
@@ -732,15 +740,7 @@ Best Home #2: Living End  (Mode A summary)
   L5 Opportunity Cost:  alternative is a generic dual or basic; Boseiju is strictly better when slot is "flex utility land". Verdict 0.
   Summary tier in this home: B — Mode A composite ~+1. The 1-of count in Modern_Living_End_*.txt is correct; not a 4-of in this shell.
 
-Best Home #3: UrzaTron  (Mode A summary)
-  L1 Role Replacement: 1 of N utility lands; splashes green only for this card. Verdict 0.
-  L2 Mana Curve Fit:    deck is colorless-Tron primarily; green is single-card splash. Channel {1}{G} requires either Talisman of Resilience (which the sample doesn't run) or Forest+Boseiju (zero basic Forests in the sample). VERY thin enabler. Verdict −1.
-  L3 Meta Fit:          mirror-Tron Boseiju, anti-Affinity Boseiju — strong matchup gains. Verdict +1.
-  L4 Synergy Math:      Karn the Great Creator (line 26) tutors artifacts; Boseiju is a land, so Karn doesn't interact. No engine. Verdict 0.
-  L5 Opportunity Cost:  alternative is Ghost Quarter (which the sample doesn't run but could). Field of Ruin in UW. Boseiju is the strongest off-color flex slot but ties Ghost Quarter for in-color sound. Verdict 0.
-  Summary tier in this home: B-minus — Mode A composite ~0. The 1-of in the sample is precisely the right count; cannot scale up without breaking the colorless manabase.
-
-Verdict line: Amulet Titan is the clear best home (Tier A in-deck), with Living End and UrzaTron as Tier-B niche includes. No Tier-C-only homes were found in the top 10; archetypes that don't already run Boseiju have a structural reason (no green source / no artifact-enchantment answer needed / faster-clock decks like Boros Aggro deprioritize utility-land slots).
+Verdict line: Amulet Titan is the clear best home (Tier A in-deck), with UrzaTron (composite ~+2) ranked above Living End (composite ~+1) as Tier-B niche includes. No Tier-C-only homes were found in the top 10; archetypes that don't already run Boseiju have a structural reason (no green source / no artifact-enchantment answer needed / faster-clock decks like Boros Aggro deprioritize utility-land slots).
 ```
 
 #### Lens B6: Meta Position — Boseiju
@@ -754,7 +754,7 @@ Evidence:
   - Lens B2 confirms presence in 3 of 10 top samples (Amulet Titan 3 copies, Living End 1, UrzaTron 1). 30% archetype penetration.
   - Lens B3 confirms ≥1 hard target exists in 6 of 10 samples — opportunity exists even where the card isn't currently played.
   - Lens B4 confirms low meta vulnerability (channel dodges counters; only Field of Ruin / mirror-Boseiju hit it; samples show 1-of land-hate at most).
-  - Lens B5 confirms 1 clear Tier-A home (Amulet Titan), 2 Tier-B homes (Living End, UrzaTron), no Tier-C-only homes among top 10.
+  - Lens B5 confirms 1 clear Tier-A home (Amulet Titan, #1), 2 Tier-B homes ranked UrzaTron (#2, composite ~+2) above Living End (#3, composite ~+1), no Tier-C-only homes among top 10.
 
 Tier assignment reasoning:
   - Tier A would require 4-of in best home AND ≥3 archetypes mainboarding it AND no significant hate. Boseiju runs 2-of (not 4-of) in Amulet Titan's mainboard; 1-of in two others. Fails the "4-of in best home" criterion. NOT Tier A.

@@ -25,11 +25,55 @@ Core principle: **A card's name, your recall of it, or an analogy is not evidenc
 
 ```
 NO REASONING WITHOUT VERIFICATION
+NO ANALYSIS WITHOUT AN IDENTIFIED FORMAT
 ```
 
 This applies to **every** card you cite — not only the ones being analyzed. Cards used as math inputs (e.g., "4 Mishra's Workshop as enabler") or interaction examples (e.g., "Chalice@2 catches Counterspell") count equally. A claim citing a banned or unplayed card invalidates the whole conclusion.
 
+**Format-binding discipline.** The format identified in Step 0 is bound to the analysis run. All downstream paths and queries (`reference-tables/<format>.md`, `samples/<format>/`, mtgtop8 `?f=LE`/`?f=MO`, B&R `banned:legacy`/`banned:modern`) branch on this single string. Never silently swap formats mid-analysis. If a card you're citing turns out to be illegal in the identified format, that's a flag to investigate (wrong format identified? wrong card name? card moved between formats?), NOT a license to switch formats.
+
 ## Workflow
+
+**Step 0 — Identify the format. MANDATORY.** This step runs before every analysis. The skill refuses to proceed without an identified format. Result is a string `format ∈ {legacy, modern}` bound for the rest of the run.
+
+**Decision rule (simple, on purpose):**
+
+1. **Explicit user statement (always honored, never overridden).**
+   - "Modern: [decklist]" / "Legacy: [decklist]" / "in Modern, ..." / "for my Legacy deck, ..." → use that format verbatim. Do NOT second-guess via card observations even if cards look unusual. (B&R violations against the user-asserted format become Step 3 findings, NOT format reassignments.)
+
+2. **Otherwise, ASK the user.** Do NOT try to infer the format from card heuristics — even when observations strongly suggest one format, the cost of asking is one short prompt; the cost of guessing wrong is a whole analysis built on the wrong banlist and the wrong meta. **When not sure, just ask.**
+
+   When asking, you MAY include a one-line hint based on observed cards — this saves the user typing on obvious cases, but the answer is still up to them:
+
+   > "Which format are you analyzing? (legacy / modern). Hint: I see `Wasteland` in your list, which suggests Legacy — confirm or correct."
+
+   > "Which format are you analyzing? (legacy / modern). Hint: I see `Ragavan, Nimble Pilferer` + `Wrenn and Six` — looks Modern; confirm or correct."
+
+   > "Which format are you analyzing? (legacy / modern). Cards present (e.g., Lightning Bolt, Counterspell, Snapcaster Mage) are legal in both — no hint to offer."
+
+   The skill refuses to proceed until the user answers.
+
+**Why this is simple by design:** previous drafts of Step 0 tried to auto-decide format from "hard signal" card lists. That approach failed twice during skill authoring — first by misclassifying Boseiju's speed/scope, then by classifying Solitude/Subtlety/Endurance as hard Modern signals when they're actually legal in both formats. The taxonomy is fragile because B&R announcements change card legality every few months, and a 6-month-stale signal list silently produces wrong format identifications. Asking the user is robust against B&R drift; auto-detection isn't.
+
+**Optional hint reference (suggestion only — never a decision):**
+
+When forming the hint, you may consult Scryfall live for any card whose `modern` and `legacy` legalities differ. For convenience, examples that often signal a format (verify via Scryfall before quoting them as the hint reason):
+
+- Often-Legacy-only-played: Wasteland, Brainstorm, Ponder, Daze, Force of Will, original-dual lands (Volcanic Island, etc.)
+- Often-Modern-only-played: Ragavan Nimble Pilferer, Wrenn and Six (both Legacy-banned at last fetch)
+- Legal-in-both (do NOT use as hint reason): Counterspell, Lightning Bolt, Snapcaster Mage, Force of Negation, Solitude, Subtlety, Endurance, The One Ring, Murktide Regent, shock lands, fetch lands
+
+These lists are only for forming the hint sentence; the user's answer is what gets bound to `format` for the run.
+
+**Output of Step 0:** state the identified format and the evidence:
+
+> "Format: Modern (heuristic: 4 Ragavan + 4 Wrenn and Six in mainboard)"
+
+> "Format: Legacy (explicit prefix in user input)"
+
+> "Format: ASKING USER — input cards [Lightning Bolt, Counterspell, Force of Will] legal in both formats."
+
+This becomes the citable first sentence of the analysis output.
 
 **Step 1 — Read literally.** Note every card name. Flag any you're not 100% sure of.
 
@@ -44,7 +88,7 @@ Use the `curl` block in Tooling below for both. No banlist is cached in this ski
 
 Per-format reference for verification URLs: `reference-tables/<format>.md` "Live Banlist Verification Sources" section.
 
-**Step 4 — Verify current meta archetypes.** Pull top 10 by share from mtgtop8 (curl with UA works; mtgdecks and aetherhub are Cloudflare-blocked — see the source-reliability matrix below). Note the date and `meta=` code.
+**Step 4 — Verify current meta archetypes.** Pull top 10 by share from mtgtop8 for the bound format (`?f=LE` for Legacy, `?f=MO` for Modern — see "mtgtop8 Decklist Parser" below). curl with UA works; mtgdecks and aetherhub are Cloudflare-blocked — see the source-reliability matrix below. Note the date and `meta=` code (different per format).
 
 **Step 4b — Verify deck PRESENCE, not just card existence.** Before claiming an interaction matters (e.g., "Chalice@2 catches Counterspell"), confirm the target card is **actually mainboarded** in current decklists. First check `samples/<format>/` (e.g., `samples/legacy/`) for a recent sample of that archetype (see **Using Sample Decklists** below for the staleness check); if the sample is fresh and you only need 1 deck per archetype, that's enough. For 2–3 decklists per archetype (the standard for inclusion claims), parse live from mtgtop8 with the parser below. Drop any interaction claim whose target card is absent. Card legality ≠ card play rate.
 
@@ -188,24 +232,37 @@ def fetch(url):
     with urllib.request.urlopen(req, timeout=20) as r:
         return r.read().decode("utf-8", errors="replace")
 
-# 1. Find archetype IDs (one-time lookup)
-fmt_page = fetch("https://www.mtgtop8.com/format?f=LE")
-archetypes = re.findall(r'archetype\?a=(\d+)[^"]+>([^<]+)</a>', fmt_page)
-# e.g., 213 → UR Tempo, 1606 → Dimir Tempo, 553 → Eldrazi Aggro
+# Format code from Step 0's identified format:
+#   Legacy → "LE"    Modern → "MO"
+# Pass through as f={fmt_code} in every URL.
+FMT = "LE"  # or "MO" — bind from Step 0 result, do not hardcode
 
-# 2. List recent decks for an archetype (note: meta code changes each period)
-arch_page = fetch("https://www.mtgtop8.com/archetype?a=213&meta=338&f=LE")
-decks = re.findall(r'event\?e=(\d+)&d=(\d+)&f=LE', arch_page)
+# 1. Find archetype IDs (one-time lookup per format)
+fmt_page = fetch(f"https://www.mtgtop8.com/format?f={FMT}")
+archetypes = re.findall(r'archetype\?a=(\d+)[^"]+>([^<]+)</a>', fmt_page)
+# Legacy examples: 213 → UR Tempo, 1606 → Dimir Tempo, 553 → Eldrazi Aggro
+# Modern examples: TBD on Phase 3 fetch day; populate from mtgtop8 /format?f=MO
+
+# 2. List recent decks for an archetype (note: meta code changes per period AND per format)
+arch_page = fetch(f"https://www.mtgtop8.com/archetype?a=213&meta=338&f={FMT}")
+decks = re.findall(rf'event\?e=(\d+)&d=(\d+)&f={FMT}', arch_page)
 
 # 3. Fetch each decklist and parse cards (mainboard only)
 for e, d in decks[:3]:
-    html = fetch(f"https://www.mtgtop8.com/event?e={e}&d={d}&f=LE")
+    html = fetch(f"https://www.mtgtop8.com/event?e={e}&d={d}&f={FMT}")
     for count, name, sec in parse_deck(html):
         if sec == "MD":
             print(count, name)
 ```
 
-**The `meta=NNN` code changes each meta period.** Find the current one by grepping the format page for `<select` options or by checking the URL when you manually click "current 2 weeks". Was `meta=34` in early May 2026, `meta=338` by late May.
+**Format URL summary:**
+
+| Format | URL pattern | Verified 2026-05-25 |
+|---|---|---|
+| Legacy | `https://www.mtgtop8.com/format?f=LE` | 200 OK, ~83KB, title "Legacy events and metagame @ mtgtop8.com" |
+| Modern | `https://www.mtgtop8.com/format?f=MO` | 200 OK, ~85KB, title "Modern events and metagame @ mtgtop8.com" |
+
+**The `meta=NNN` code changes each meta period AND differs between formats.** Find the current one by grepping the format page for `<select` options or by checking the URL when you manually click "current 2 weeks". Legacy was `meta=34` in early May 2026, `meta=338` by late May. Modern's current code: fetch and inspect on Phase 3 / on day-of-analysis.
 
 ### Hypergeometric Probability Template
 
@@ -567,7 +624,7 @@ When reporting cantrip-fueled probabilities, ALWAYS quote both bounds: "raw hype
 |---|---|
 | Scryfall returns 403 | Add User-Agent + Accept headers (see above) |
 | Scryfall returns 429 | Sleep longer (0.5s+), respect `Retry-After` |
-| mtgtop8 returns empty cards | `meta=` param is stale; fetch `format?f=LE` to find current |
+| mtgtop8 returns empty cards | `meta=` param is stale OR wrong format code; fetch `format?f=<LE\|MO>` for the bound format to find current |
 | mtgdecks/aetherhub 403 | Cloudflare-blocked; use WebSearch snippets, don't fabricate |
 | WebFetch on Scryfall API | Always 403 — use curl |
 | Parser finds 0 cards | mtgtop8 may have changed HTML structure; inspect with `curl ... -o /tmp/x.html` and grep |
@@ -686,3 +743,11 @@ GREEN-verified by subagent test 2026-05-25: applied to a fresh Trinisphere meta 
 v4 (2026-05-25): repo restructured — each skill is its own folder at the repo root. The five-lens inclusion framework moved out of this directory (`mtg-card-evaluation.md`) and became a sibling skill (`mtg-card-evaluation/SKILL.md`), invoked via the Skill tool when an inclusion question arises. Motivation: name-folder correspondence so each skill installs independently, and the inclusion framework is reusable (callable standalone via `/mtg-card-evaluation`, not gated behind a full deck-analysis pass).
 
 v5 Phase 1 (2026-05-25): multi-format restructure preparation. Per `PLAN-modern-mode-b.md`. File moves: `reference-tables.md` → `reference-tables/legacy.md`; `samples/` → `samples/legacy/`. Stubs created for Modern: `reference-tables/modern.md` (Live Banlist sources canonical, rest TODO Phase 4) and `samples/modern/README.md` (TODO Phase 3). Step 3 updated to prefer Scryfall API banlist endpoint (`https://api.scryfall.com/cards/search?q=banned%3A<format>`) over Wizards HTML, with both URLs documented per format in their `reference-tables/<format>.md`. **Phase 1 leaves the skill fully functional for Legacy** via the new paths; Modern data populates in Phases 3–4. Step 0 (mandatory format identification) lands in Phase 2.
+
+v5 Phase 2 (2026-05-25): mandatory Step 0 added. Workflow now starts with **Step 0 — Identify the format**, refuses to proceed without an identified format ∈ {legacy, modern}. Iron Law gains a second clause: "NO ANALYSIS WITHOUT AN IDENTIFIED FORMAT". Format-binding discipline added: the format string is bound for the run and never silently swapped mid-analysis. Tooling block updated: mtgtop8 URLs use `?f={FMT}` template (Legacy `LE`, Modern `MO`, both verified live 2026-05-25 returning correct format pages). Step 4 updated to reference the format-bound URL.
+
+**Step 0 detection rules deliberately simple — per user directive 2026-05-25 ("if not sure just ask"):**
+1. Explicit user prefix wins (e.g., `Modern: ...`, `Legacy: ...`, "in Modern, ...").
+2. Otherwise, ASK the user. Heuristic hints (Wasteland → likely Legacy; Ragavan/W6 → likely Modern) are offered as suggestions inside the prompt, but the user's answer is the decision. No auto-detect path.
+
+RED that led to this simplification: previous Step 0 draft tried two iterations of "hard signal" auto-detect lists. First miss: described Boseiju as "sorcery-speed" (memory error). Second miss: classified Solitude/Subtlety/Endurance as hard Modern signals when Scryfall verification showed all three are legal in both formats. Lesson: any card-classification list goes stale every B&R cycle and can be wrong in subtle ways; asking the user is robust against both card-pool drift and skill-author error. **Phase 2 leaves the skill safe to use on Modern inputs structurally**, even though Modern reference data isn't fully populated until Phase 4.

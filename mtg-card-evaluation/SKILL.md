@@ -1,6 +1,6 @@
 ---
 name: mtg-card-evaluation
-description: Use when deciding whether to add a specific Magic the Gathering card to a specific deck, whether one card is an upgrade over another in a deck, when evaluating new-set printings for inclusion in existing lists, for sideboard slot decisions, or for replacement choices after a ban. Apply specifically to card-deck-fit questions, not general deck analysis.
+description: Use for two question shapes about a specific Magic the Gathering card. Mode A — "does card X belong in deck Y?": include/swap/sideboard/replacement-after-ban decisions where a target deck is given. Mode B — "how does card X fit in <format> meta?", "what decks would play X?", "is X a meta staple?", "where is the best home for X?": meta-positioning decisions where a card and a format are given but NO target deck. Apply specifically to card-fit questions, not general deck analysis.
 disable-model-invocation: true
 ---
 
@@ -8,11 +8,14 @@ disable-model-invocation: true
 
 ## Overview
 
-Card evaluation answers exactly one question: **"does card X belong in deck Y?"** It is **not** general deck analysis — that's `mtg-deck-analysis`.
+Card evaluation answers two question shapes about ONE specific card. **It is not general deck analysis** — that's `mtg-deck-analysis`.
 
-The framework is five lenses scored independently from −2 to +2, then summed for a composite verdict. **What makes this framework useful is not the score itself — it's the evidence behind each score.** A "+1 on Lens 2" with no citation is the same hallucination wearing a number; a "+1 on Lens 2" backed by `validate_manabase()` output is a real claim.
+- **Mode A — Card in Deck.** Question: *"does card X belong in deck Y?"* You have a target deck. Output: five lenses scored independently from −2 to +2, summed to a numeric composite verdict.
+- **Mode B — Card in Meta.** Question: *"how does card X fit in <format>?"* / *"what decks would play X?"* / *"is X a meta staple?"* You have a card and a format but NO target deck. Output: six lenses, each with its own Evidence block, summed to a **qualitative Tier prediction** (A / B / C / D) plus a Best-Homes-Top-3 recommendation. No numeric sum — there is no single deck to fit against.
 
-Core principle: **Every lens score must cite at least one piece of verifiable evidence.** "Feels stronger", "obvious upgrade", "Tier 1 staple", "everybody plays it" — none of these are evidence.
+Both modes share the same Iron Law: every lens output must cite verifiable evidence. **What makes this framework useful is not the score or tier itself — it's the evidence behind each lens.** A "+1 on Lens 2" with no citation is the same hallucination wearing a number; a "Tier A" with no Lens B2 citation is the same hallucination wearing a letter.
+
+Core principle: **Every lens output must cite at least one piece of verifiable evidence.** "Feels stronger", "obvious upgrade", "Tier 1 staple", "everybody plays it" — none of these are evidence.
 
 ## The Iron Law
 
@@ -46,17 +49,29 @@ If the score has nothing better than a vague phrase, the correct action is **not
 
 ## When to Use
 
+**Mode A triggers (card-in-deck — target deck given):**
 - "Should I add card X to my deck?"
 - "Is card X better than card Y in this deck?"
 - Evaluating a card from a new set for an existing deck
 - Sideboard slot decision
-- Replacement decision after a ban
+- Replacement decision after a ban (target deck is the post-ban list)
+
+**Mode B triggers (card-in-meta — format given, no target deck):**
+- "How does X fit in Modern?" / "How does X position in Legacy?"
+- "What decks would play X?"
+- "Is X a meta staple?" / "Is X Tier 1?"
+- "Where is the best home for X in <format>?"
+- "Evaluate <new printing> for <format>" with no deck named
+- "Is X worth crafting / brewing around?" in a specific format
+
+If the user names BOTH a card AND a target deck → Mode A. If the user names a card and a format but NO target deck → Mode B. If ambiguous, ask which mode they want before producing evidence blocks — the two modes consume different data.
 
 ### When NOT to use
 
 - General "is this deck good?" → use `mtg-deck-analysis` instead
 - Probability questions about a deck's draws → `mtg-deck-analysis` (it has the Python validators)
 - "What's the current meta?" → `mtg-deck-analysis` Step 4
+- "Build me a deck around X" → `mtg-deck-analysis` (deck construction, not card-fit)
 
 ## Prerequisites
 
@@ -89,7 +104,9 @@ Verdict: <one sentence stating why the score follows from the evidence>
 
 **Verdict line discipline:** the verdict must reference at least one item from the Evidence block. "Strong upgrade" is not a verdict. "+2 because `p_find` rose from 0.234 to 0.487 between the alternative and this card" is a verdict.
 
-## The Five-Lens Evaluation
+## Mode A: Card in Deck (Five-Lens Evaluation)
+
+Use Mode A when the user has named a specific target deck. The five lenses below each score from −2 to +2; sum them for the composite verdict in the Mode A "Composite Decision" table. Every lens score must carry its own Evidence block per the Iron Law.
 
 ### Lens 1: Role Replacement
 
@@ -173,9 +190,9 @@ What else could fill the slot?
 - Comparable alternatives — choice is mostly preference (Evidence: at least one alternative ties on the primary metric) → **0**
 - Strictly better alternative exists (Evidence: a named alternative dominates on ≥ 2 lenses) → **−2**
 
-## Composite Decision
+## Mode A Composite Decision
 
-Sum the scores across all five lenses:
+Sum the scores across all five Mode A lenses:
 
 | Total | Action |
 |---|---|
@@ -187,7 +204,9 @@ Sum the scores across all five lenses:
 
 **Composite discipline:** the score range is unchanged. The new requirement is that every lens contributing to the sum has its own Evidence block. A composite of +5 with three unscored lenses is **+2 actual scored**, not +5 — unscored lenses do NOT round in your favor.
 
-## Worked Example 1: Flow State in Blue Post (Legacy, May 2026)
+## Mode A Worked Examples
+
+### Mode A Worked Example 1: Flow State in Blue Post (Legacy, May 2026)
 
 **Card verified:** Flow State (Scryfall SOS #49). `{1}{U}` Sorcery, MV 2. Oracle: "Look at the top three cards of your library, then put one of them into your hand. (Or put two of them into your hand if there's both an instant card and a sorcery card in your graveyard.)"
 
@@ -295,7 +314,7 @@ Verdict: 0 — no clear better alternative for the specific role of "2-MV specul
 
 **Composite: 0 + 1 + 1 + 0 + 0 = +2.** Verdict per decision table: **Include 1–2 copies, test, iterate.** Don't go to 3–4 copies — the trigger rate doesn't justify it without graveyard fueling.
 
-## Worked Example 2: Tezzeret, Cruel Captain in Blue Post
+### Mode A Worked Example 2: Tezzeret, Cruel Captain in Blue Post
 
 **Card verified:** Tezzeret, Cruel Captain (Scryfall EOE #2). `{3}` Legendary Planeswalker, MV 3, 4 starting loyalty. Triggers on artifact ETB (+1 loyalty). 0: untap target artifact or creature. −3: tutor a 0 or 1 MV artifact card from library.
 
@@ -393,7 +412,7 @@ Verdict: −2 — a strictly better alternative exists in the same deck for the 
 
 **Composite: 0 + 0 + 0 + (−1) + (−2) = −3.** Verdict per decision table: **Don't include in Blue Post.** (Note: in Trini Tron, where Manifold Key and Voltaic Key are MV-1 artifacts AND the 0 ability untaps Grim Monolith, Tezzeret would score very differently — apply this skill separately to that deck.)
 
-## Worked Example 3: Chalice of the Void in Blue Post
+### Mode A Worked Example 3: Chalice of the Void in Blue Post
 
 **Card verified:** Chalice of the Void (Scryfall MRD #150). `{X}{X}` Artifact, MV variable. Oracle: "Chalice of the Void enters the battlefield with X charge counters on it. Whenever a player casts a spell with mana value equal to the number of charge counters on Chalice of the Void, counter that spell."
 
@@ -497,6 +516,257 @@ Verdict: +1 — no better alternative exists at this slot for the specific role.
 
 **Composite: +1 + 1 + 2 + 0 + 1 = +5.** Verdict per decision table: **Strong include — likely strict upgrade.** Run 2–3 copies mainboard, 1 in sideboard.
 
+## Mode B: Card in Meta
+
+Use Mode B when the user has named a card AND a format but has NOT named a target deck. The question is positioning, not inclusion: where does this card live in the format, how dominant is it, and what removes it.
+
+Mode B has **six lenses**, scored **qualitatively** (no −2/+2 numbers). The verdict is a **Tier letter (A / B / C / D)**, not a numeric sum. The reason there is no sum: there is no single deck to fit against, so the score-add approach of Mode A doesn't apply. The discipline that does apply is the same Iron Law — every lens output must cite verifiable evidence, with the same forbidden vague phrases.
+
+**Per-lens output shape (Mode B):**
+
+```
+Lens BN: <Name>
+Finding: <one-sentence qualitative answer to the lens question>
+
+Evidence:
+  - <citable source 1 with reference>
+  - <citable source 2 with reference>
+  - <python output / sample citation / Scryfall fact / mtgtop8 count, as applicable>
+
+Verdict line: <one sentence stating why the Finding follows from the Evidence>
+```
+
+The Finding is the qualitative answer (e.g., "fills reactive utility-land slot for artifact/enchantment/nonbasic-land removal at instant speed"). The Verdict line ties the Finding back to the citations exactly the way Mode A's Verdict line does.
+
+### Lens B1: Role Identification
+
+What role(s) does the card fill? Aggressive (proactive damage), midrange (efficient threat + answer), control (reactive only), combo (engine piece), hate (matchup-specific blank), or utility (flexible cheap toolbox)?
+
+**What to verify before writing the Finding:**
+- The card's Oracle text — fetched live via Scryfall (`curl` with User-Agent + Accept headers — WebFetch returns 403). NEVER paraphrase or recall.
+- Type line — affects what triggers it / what triggers off it.
+- Cast cost AND alt-cast (channel, evoke, flashback, escape, etc.) — speed of effect matters for role categorization.
+- For lands: does it tap for colored mana or only colorless? Does it have an activated ability?
+
+**Evidence required:** the exact Oracle text quoted verbatim from Scryfall, with set code + collector number + fetch date.
+
+### Lens B2: Archetype Fit Candidates
+
+Among the top 5 format archetypes (by current mtgtop8 share with fetch date), which currently have the role this card fills? For each archetype that does, name the **current best-in-role card** they actually run.
+
+**What to verify before writing the Finding:**
+- Top 5 archetypes by meta share — mtgtop8 fetch with date.
+- For each archetype, the sample decklist in `mtg-deck-analysis/samples/<format>/`. Cite by file name and the line count of the role-equivalent card.
+- The current best-in-role card per archetype — not an inference; cite the actual decklist count.
+
+**Evidence required:** per archetype enumerated: archetype name, sample file path, count of role-equivalent card in that sample.
+
+### Lens B3: Targets / Enables
+
+For a reactive card: what does it answer? Cite meta-card counts that the card hits across sample decklists (e.g., "destroys Urza's Saga, of which 4 mainboard copies appear in `Modern_Affinity_*.txt`").
+
+For a proactive card: what does it enable? Cite the engine pieces it powers up (e.g., "lets Storm chain reach 8 spells with `joint_n_cards()` output 0.42 on a Ruby Storm shell").
+
+**What to verify before writing the Finding:**
+- For reactive cards: enumerate the target types from Oracle text. For each target type, grep the format's sample directory for hit-target cards. Cite by sample file + count.
+- For proactive cards: name the engine pieces it interacts with, with their Oracle texts verified independently.
+
+**Evidence required:** named targets/enables from at least 2 different sample files in the format's sample directory, with copy counts.
+
+### Lens B4: Vulnerabilities
+
+What removes, counters, or blanks this card in the current meta? Cite the actual mainboard/sideboard counts in samples — NOT theoretical answers that no one runs.
+
+**What to verify before writing the Finding:**
+- For permanents: removal that hits this card type at this MV. Enumerate by sample.
+- For spells: counters that catch this MV. Cite per-deck Force of Negation / Counterspell counts.
+- For lands: land destruction is rare in Modern (no Wasteland); enumerate the actual answers (Field of Ruin, Ghost Quarter, Boseiju itself, Assassin's Trophy).
+- For static-ability cards: Force of Vigor, Disenchant variants, type-specific hate.
+
+**Evidence required:** at least 2 named answer cards with their mainboard/sideboard counts cited from format sample files. "Theoretically removable by X" does not count — must be cards actually present in current samples.
+
+### Lens B5: Best Homes Top 3
+
+Rank the 3 most likely deck homes from Lens B2's candidates. For each of the top 3, summary-apply Mode A's five lenses with **one line of evidence per lens** (not full Evidence blocks — the goal here is a triage scorecard, not a per-deck deep dive). The reader should be able to see the same five-lens shape as Mode A but compressed to a single line per lens.
+
+Per-home output shape:
+
+```
+Best Home #N: <Archetype name>  (Mode A summary)
+  L1 Role Replacement: <one-line evidence + verdict>
+  L2 Mana Curve Fit:    <one-line evidence + verdict>
+  L3 Meta Fit:          <one-line evidence + verdict>
+  L4 Synergy Math:      <one-line evidence + verdict>
+  L5 Opportunity Cost:  <one-line evidence + verdict>
+  Summary tier in this home: A / B / C / D (with one-sentence why)
+```
+
+**Evidence required:** each one-liner still cites a source (sample file, mtgtop8 count, Oracle text, or named alternative). Compression is allowed; evidence-free claims are not.
+
+If fewer than 3 archetypes plausibly fit the role from Lens B2, say so explicitly ("only 2 homes pass Lens B2 — Tier capped at B regardless of Lens B5 ranking").
+
+### Lens B6: Meta Position
+
+Composite tier verdict, justified by Lenses B1–B5.
+
+| Tier | Definition |
+|---|---|
+| **Tier A** | Likely format staple — runs 4-of in its best home; appears across multiple top-5 archetypes; no significant meta hate; no strictly-better alternative exists |
+| **Tier B** | Situational include — runs 1–2 copies in its best home; played in some but not all relevant archetypes; either has minor meta hate, or has a comparable alternative |
+| **Tier C** | Sideboard tech only — mainboard inclusion is hard to justify; specific matchup answers; commonly displaced by stronger alternative in main slot |
+| **Tier D** | Unplayable in current meta — dominated alternative exists; or hated out; or role isn't valued by current archetypes |
+
+**Tier discipline:** the tier follows from B1–B5, not from gut feel. If B2 finds 4 archetypes that play this card and B4 finds no hate, you cannot grade Tier C "just to be conservative". If B2 finds 0 archetypes that play this card, you cannot grade Tier A no matter how strong B1 reads.
+
+**Unscored discipline:** if any of B1–B5 is `unscored — needs verification`, the Tier is at most B (you don't have enough evidence to claim A). If 2+ lenses are unscored, the Tier is `INSUFFICIENT EVIDENCE — re-run with samples and Scryfall verification` and not assigned at all.
+
+### Mode B Worked Example: Boseiju, Who Endures in Modern (May 2026)
+
+**Card verified live via Scryfall on 2026-05-25** (Scryfall NEO #266, oracle_id `bf1341dd-41a3-49f6-87ec-63170dde4324`). The Oracle text is quoted verbatim below — see Lens B1.
+
+---
+
+#### Lens B1: Role Identification — Boseiju
+
+```
+Lens B1: Role Identification
+Finding: Utility land (reactive). Taps for {G}; channel ability is an instant-speed sacrifice-from-hand "destroy" effect hitting artifact OR enchantment OR nonbasic land.
+
+Evidence:
+  - Scryfall NEO #266 (fetched 2026-05-25):
+      type_line: "Legendary Land"
+      mana_cost: ""  (MV 0)
+      oracle_text: "{T}: Add {G}.
+                    Channel — {1}{G}, Discard this card: Destroy target
+                    artifact, enchantment, or nonbasic land an opponent
+                    controls. That player may search their library for
+                    a land card with a basic land type, put it onto the
+                    battlefield, then shuffle. This ability costs {1}
+                    less to activate for each legendary creature you
+                    control."
+      produced_mana: ["G"]
+      legalities.modern: "legal"
+      legalities.legacy: "legal"
+  - Channel is an activated ability, not a cast. Per Comprehensive Rules 702.74, channel is activated from hand at instant speed (the card's own ability defines timing; the default for activated abilities is "any time you could cast an instant"). So Boseiju's effect resolves at instant speed.
+  - The effect hits THREE permanent types (artifact / enchantment / nonbasic land), not just lands. The "search for basic land" rider is a compensation, not the primary effect.
+
+Verdict line: utility reactive land that doubles as a green source — fits decks that want a flex answer slot they can play as a land when the answer isn't needed.
+```
+
+(Lessons-learned note for future maintainers: previous drafts of this skill described Boseiju as "sorcery-speed nonbasic-hate only" — wrong on BOTH counts. Channel is instant-speed; the effect hits artifact and enchantment too. Re-verify Oracle text via Scryfall before editing this example, per the Iron Law.)
+
+#### Lens B2: Archetype Fit Candidates — Boseiju
+
+```
+Lens B2: Archetype Fit Candidates
+Finding: Among the top 10 Modern archetypes (mtgtop8 fetch 2026-05-25, per samples/modern/README.md), Boseiju lives in 3 — Amulet Titan (2 copies mainboard + 1 sideboard), Living End (1 mainboard), UrzaTron (1 mainboard). Boseiju competes with Field of Ruin and Ghost Quarter for the same "answer + colorless utility land" slot in others.
+
+Evidence:
+  - Amulet Titan: samples/modern/Modern_Amulet_Titan_by_HouseOfManaMTG.txt lines 11 (mainboard "2 Boseiju, Who Endures") and 42 (sideboard "1 Boseiju, Who Endures"). Total exposure 3.
+  - Living End: samples/modern/Modern_Living_End_by_Lorenzo_Paolini.txt line 11 ("1 Boseiju, Who Endures") in a green-splash cascade shell. Channel cost {1}{G} payable off Breeding Pool + cascade-shell fixing.
+  - UrzaTron: samples/modern/Modern_UrzaTron_by_Evan_Johnson.txt line 11 ("1 Boseiju, Who Endures") as a singleton off-color utility land (the deck is primarily colorless, splashing green for Boseiju exposure).
+  - Boseiju ABSENT from the other 7 top samples: Boros Aggro, Affinity, Blink (Esper), UR Aggro (Cori Prowess), Ruby Storm, Eldrazi Ramp, UW Control. Of these, Eldrazi Ramp is the most surprising omission (green base, legendary creatures present) — see Lens B5.
+  - Best-in-role per archetype that does NOT run Boseiju:
+      Boros Aggro: no land-destruction slot; runs Plains/Sacred Foundry instead. Boseiju doesn't tap for white.
+      Affinity: no green source; runs Urza's Saga + Engineered Explosives (line 24 of Modern_Affinity_*.txt) as artifact/enchantment answer in-color.
+      UW Control: 1 Field of Ruin (line 13 of Modern_UW_Control_*.txt) is the in-color analog.
+      Eldrazi Ramp: 1 Ghost Quarter mainboard + 1 sideboard (lines 16, 39 of Modern_Eldrazi_Ramp_*.txt) covers the land-answer role without splashing for green channel cost.
+
+Verdict line: Boseiju has a confirmed home in 3 of 10 top-meta samples — multi-archetype presence at low copy counts. Not universally played, not narrowly played. Mid-frequency utility land.
+```
+
+#### Lens B3: Targets / Enables — Boseiju
+
+```
+Lens B3: Targets / Enables
+Finding: Reactive — answers artifacts, enchantments, and nonbasic lands. Modern's 2026-05-25 meta gives Boseiju concrete targets in 6+ of the top 10 samples.
+
+Evidence:
+  - Targets in current top 10 samples (artifact / enchantment / nonbasic land hits):
+      Modern_Affinity_*.txt line 25: 4 Urza's Saga (Enchantment Land — both an enchantment AND a nonbasic land, Boseiju double-hits).
+      Modern_Affinity_*.txt line 24: 4 Engineered Explosives (artifact).
+      Modern_Amulet_Titan_*.txt line 25: 4 Urza's Saga (same dual classification).
+      Modern_Amulet_Titan_*.txt line 35: 4 Amulet of Vigor (artifact — the deck's namesake combo piece).
+      Modern_Amulet_Titan_*.txt line 36: 4 Spelunking (enchantment).
+      Modern_UrzaTron_*.txt line 26: 4 Karn, the Great Creator (planeswalker — NOT a Boseiju target).
+      Modern_UrzaTron_*.txt: 4 Urza's Mine + 4 Urza's Power Plant + 4 Urza's Tower (all nonbasic lands; Boseiju kills any one of them, breaking Tron assembly).
+  - The "search for basic land" rider matters for evaluation: Affinity has no basic lands (verified by scanning Modern_Affinity_*.txt for "Mountain" / "Plains" / "Island" / "Swamp" / "Forest" — none present). So Affinity's owner cannot fetch a replacement when their Urza's Saga is Boseiju'd. Amulet Titan and UrzaTron both run basic Forests; the rider gives them partial compensation.
+
+Verdict line: Boseiju has ≥1 hard target in 6 of 10 top samples — Affinity (artifacts + Urza's Saga), Amulet Titan (Amulet of Vigor + Spelunking + Urza's Saga), UrzaTron (the Tron pieces themselves), Living End (cascade-blocked enchantment graveyards via Rest in Peace-equivalents in some lists, less central), Eldrazi Ramp (Talisman of Impulse, Utopia Sprawl), and UW Control (1 Field of Ruin counts as target — niche). Highly meta-relevant.
+```
+
+#### Lens B4: Vulnerabilities — Boseiju
+
+```
+Lens B4: Vulnerabilities
+Finding: As an MV-0 land, Boseiju is rarely removed directly. The main vulnerabilities are (a) counter-removed when used reactively (no — channel is an activated ability, NOT cast; counter-spells don't hit), (b) Boseiju'd back (mirror), and (c) Force of Vigor cracking the player's own follow-up artifacts/enchantments after Boseiju destroys a key one.
+
+Evidence:
+  - Counter-spell exposure: Counterspell, Force of Negation, and Subtlety all counter SPELLS or BOUNCE PERMANENTS. The channel ability is activated, not cast. Per Comprehensive Rules 701.55, channel pays its activation cost and discards the card; the resulting effect is the activated ability's effect. Counterspell-class cards don't hit activated abilities. Verified via Modern_UW_Control_*.txt running Counterspell — irrelevant against Boseiju's channel.
+  - Mirror land-destruction: Boseiju's effect destroys nonbasic lands. Boseiju is itself a nonbasic land. Modern_Living_End_*.txt running 1 Boseiju + Modern_Amulet_Titan_*.txt running 2 mainboard means Boseiju mirrors happen in this meta.
+  - Force of Vigor exposure: 2 mainboard in Modern_Living_End_*.txt (line 44) and 2 sideboard in Modern_Amulet_Titan_*.txt (line 46). Force of Vigor destroys two artifacts/enchantments — does NOT hit Boseiju (a land, not artifact/enchantment). So Force of Vigor is NOT a Boseiju vulnerability; it's a vulnerability for the follow-up artifact you play.
+  - Field of Ruin: 1 mainboard in Modern_UW_Control_*.txt (line 13). Field of Ruin destroys nonbasic lands — DOES hit Boseiju. Low count in samples (1 of 10) → low actual exposure.
+  - Otawara, Soaring City bounce: Modern's blue utility-land analog. Doesn't appear in 10/10 samples mainboard against Boseiju; sideboard exposure varies.
+
+Verdict line: Boseiju has very low Modern-meta vulnerability. Channel-as-activated-ability dodges counter spells; the card is a land so it dodges most permanent removal; only Field of Ruin / Ghost Quarter / mirror-Boseiju hit it, and those are 1-of singletons in the samples. The Iron-Law-honest version: low-vulnerability is itself evidence that B2's Tier-prediction can lean toward A rather than B.
+```
+
+#### Lens B5: Best Homes Top 3 — Boseiju
+
+```
+Lens B5: Best Homes Top 3
+
+Best Home #1: Amulet Titan  (Mode A summary)
+  L1 Role Replacement: replaces a Forest slot at zero cost when not channeled (basic Forest count in Modern_Amulet_Titan_*.txt: 0 basics — Boseiju IS the green source for the deck). Verdict +2.
+  L2 Mana Curve Fit:    MV 0 channel cost {1}{G}; deck is mono-green-with-utility-splashes, casts {1}{G} reliably from T2. Verdict +1.
+  L3 Meta Fit:          hits Affinity (Urza's Saga), UrzaTron (Tron pieces), opposing Amulet (Amulet of Vigor + Spelunking) — 4 of top 5 matchups improved. Verdict +2.
+  L4 Synergy Math:      no engine in Amulet Titan triggers off land ETB or destroy events; pure utility. Verdict 0.
+  L5 Opportunity Cost:  alternative is more Forests or a Bojuka Bog; Boseiju dominates on flexibility. Verdict +1.
+  Summary tier in this home: A — Mode A composite +6 if computed in full. 2-3 copies is the right count and is what the sample runs (2 mainboard + 1 sideboard = 3 total).
+
+Best Home #2: Living End  (Mode A summary)
+  L1 Role Replacement: 1 of N green sources in a 4-color cascade shell; could be a basic Forest. Verdict 0 (lateral — provides flex answer in exchange for tempo loss on tapped basic equivalence).
+  L2 Mana Curve Fit:    cascade shell needs reliable {2}{R}{R} for Violent Outburst; green is a splash for sideboard answers + Boseiju. Channel cost {1}{G} occasionally castable. Verdict 0.
+  L3 Meta Fit:          Living End vs Affinity / UrzaTron / opposing Tron decks gets meaningful gains from Boseiju. Verdict +1.
+  L4 Synergy Math:      no relevant trigger interaction. Verdict 0.
+  L5 Opportunity Cost:  alternative is a generic dual or basic; Boseiju is strictly better when slot is "flex utility land". Verdict 0.
+  Summary tier in this home: B — Mode A composite ~+1. The 1-of count in Modern_Living_End_*.txt is correct; not a 4-of in this shell.
+
+Best Home #3: UrzaTron  (Mode A summary)
+  L1 Role Replacement: 1 of N utility lands; splashes green only for this card. Verdict 0.
+  L2 Mana Curve Fit:    deck is colorless-Tron primarily; green is single-card splash. Channel {1}{G} requires either Talisman of Resilience (which the sample doesn't run) or Forest+Boseiju (zero basic Forests in the sample). VERY thin enabler. Verdict −1.
+  L3 Meta Fit:          mirror-Tron Boseiju, anti-Affinity Boseiju — strong matchup gains. Verdict +1.
+  L4 Synergy Math:      Karn the Great Creator (line 26) tutors artifacts; Boseiju is a land, so Karn doesn't interact. No engine. Verdict 0.
+  L5 Opportunity Cost:  alternative is Ghost Quarter (which the sample doesn't run but could). Field of Ruin in UW. Boseiju is the strongest off-color flex slot but ties Ghost Quarter for in-color sound. Verdict 0.
+  Summary tier in this home: B-minus — Mode A composite ~0. The 1-of in the sample is precisely the right count; cannot scale up without breaking the colorless manabase.
+
+Verdict line: Amulet Titan is the clear best home (Tier A in-deck), with Living End and UrzaTron as Tier-B niche includes. No Tier-C-only homes were found in the top 10; archetypes that don't already run Boseiju have a structural reason (no green source / no artifact-enchantment answer needed / faster-clock decks like Boros Aggro deprioritize utility-land slots).
+```
+
+#### Lens B6: Meta Position — Boseiju
+
+```
+Lens B6: Meta Position
+Finding: Tier B (situational include) overall — bumps to Tier A within Amulet Titan, but does NOT appear in 7 of 10 top-meta samples. The format-wide answer is "include when your archetype has green AND wants flex utility, not as a universal staple".
+
+Evidence:
+  - Lens B1 confirms versatile instant-speed reactive role on a green-producing land.
+  - Lens B2 confirms presence in 3 of 10 top samples (Amulet Titan 3 copies, Living End 1, UrzaTron 1). 30% archetype penetration.
+  - Lens B3 confirms ≥1 hard target exists in 6 of 10 samples — opportunity exists even where the card isn't currently played.
+  - Lens B4 confirms low meta vulnerability (channel dodges counters; only Field of Ruin / mirror-Boseiju hit it; samples show 1-of land-hate at most).
+  - Lens B5 confirms 1 clear Tier-A home (Amulet Titan), 2 Tier-B homes (Living End, UrzaTron), no Tier-C-only homes among top 10.
+
+Tier assignment reasoning:
+  - Tier A would require 4-of in best home AND ≥3 archetypes mainboarding it AND no significant hate. Boseiju runs 2-of (not 4-of) in Amulet Titan's mainboard; 1-of in two others. Fails the "4-of in best home" criterion. NOT Tier A.
+  - Tier B fits: situational include (1-2 in best home, sometimes 0 in others); ≥1 archetype runs it; minor meta hate exists (Field of Ruin singletons). MATCHES.
+  - Tier C would require sideboard-only positioning. Boseiju is mainboard in all 3 homes that run it. NOT Tier C.
+  - Tier D would require dominated alternative or hated-out status. Field of Ruin is a partial in-color alternative for non-green decks; Boseiju's flexibility (it taps for {G} which Field doesn't) keeps it from being dominated. NOT Tier D.
+
+Verdict: Boseiju, Who Endures = Tier B in Modern as of 2026-05-25. Tier A specifically inside Amulet Titan. Recommend 2-3 copies mainboard for any green-base midrange or ramp deck with artifact/enchantment-removal pressure from its meta; 1-of off-color splash for decks like UrzaTron / Living End that can spare the slot.
+```
+
+**Mode B Composite Verdict for Boseiju in Modern (May 2026): Tier B (Tier A in Amulet Titan).** Best home: Amulet Titan with 2 mainboard + 1 sideboard. The B&R verification date stamp on every cited sample is 2026-05-25; re-verify all of the above (especially B2 and B4) if the analysis is run more than 24 hours after a Modern B&R announcement.
+
 ## Pitfalls in Card Evaluation
 
 | Pitfall | Why bad | Fix |
@@ -538,10 +808,19 @@ In both cases, the output is **five per-lens Evidence blocks + composite scoreca
 
 - **v1** (2026-05-25): split from `mtg-deck-analysis` supporting file (`mtg-card-evaluation.md`) into a standalone skill (`mtg-card-evaluation/SKILL.md`), invokable independently or via Skill tool.
 - **v2** (2026-05-25): added the Iron Law (no lens score without evidence). Each lens now requires a per-lens Evidence block citing Scryfall / mtgtop8 / Python output / named alternatives. Worked examples rewritten in this format with concrete citations (Python computations for trigger rates, decklist sample references with fetch dates, named alternative cards with Scryfall set codes). Motivation: previous 5-point lens scoring without required evidence let "feels stronger" pass as analysis — promoting it to a percentage scale would have made hallucination worse, not better. Detail is added through evidence depth, not score granularity.
+- **v3** (2026-05-25): added Mode B (card-in-meta positioning). The existing five-lens framework became "Mode A: Card in Deck" and the three Mode A worked examples were renumbered as Mode A Worked Examples 1–3. Mode B adds six new lenses (B1 Role Identification, B2 Archetype Fit Candidates, B3 Targets/Enables, B4 Vulnerabilities, B5 Best Homes Top 3, B6 Meta Position) with the same Iron Law applied to each Finding block. Mode B's verdict is **qualitative (Tier A/B/C/D)**, not numeric — there is no single deck to fit against, so the score-sum approach doesn't apply. Mode B's "When to Use" triggers explicitly cover "how does X fit in <format>?", "what decks would play X?", "is X a staple?". Mode B worked example: Boseiju, Who Endures in Modern, evaluated to Tier B overall (Tier A specifically inside Amulet Titan), with all six lenses citing Scryfall Oracle text + `samples/modern/` decklist files by name.
+
+The verified-Boseiju discipline matters: this skill author misclassified Boseiju TWICE during earlier phases — once as "sorcery-speed" (wrong; channel is instant-speed), once as "nonbasic-hate only" (wrong; channel hits artifact OR enchantment OR nonbasic land). The Mode B worked example must be built from a live Scryfall fetch every time it is materially edited. The Iron Law applies to the skill author too.
 
 RED failures that motivated v2:
 - Flow State scored as "+1 Lens 4 — trigger rate around 35-45%" without a computation. Demand: cite the Python output.
 - Chalice scored as "+2 Lens 3 — meta is full of 1-MV cantrips" without counting them in actual decklists. Demand: cite samples with fetch date.
 - Tezzeret rejected as "Lens 5 −2, Karn is obviously better" without enumeration. Demand: name the alternative and its dominance on specific lenses.
 
-GREEN check: any fresh card+deck pair, applied through the framework, must produce 5 Evidence blocks. If a lens produces only a score and no Evidence, the framework has been used incorrectly.
+RED failures that motivated v3:
+- Fresh subagent given "evaluate Boseiju in Modern" without Mode B defaults to Mode A, asks "what deck?", and either stalls or fabricates a deck context. The Mode B section gives the skill a dedicated path for card-in-meta questions.
+- Subagent producing "Tier 1 staple" verdicts without evidence — Mode B's Lens B6 explicitly bans this by requiring the Tier letter to be justified by B1–B5 citations, with the rule that 2+ unscored lenses prevent any Tier assignment.
+
+GREEN check (Mode A): any fresh card+deck pair, applied through the framework, must produce 5 Evidence blocks. If a lens produces only a score and no Evidence, the framework has been used incorrectly.
+
+GREEN check (Mode B): any fresh card+format pair, applied through the framework, must produce 6 Finding+Evidence blocks AND a Tier letter justified explicitly by ≥5 of those 6 lenses. If fewer than 5 lenses are evidenced, the output should be "INSUFFICIENT EVIDENCE — re-run with samples and Scryfall verification" and no Tier should be assigned.

@@ -7,11 +7,11 @@ Living reference for Modern card-specific interactions and pitfalls. Always veri
 | Card | Wrong assumption | Reality (Scryfall verified 2026-05-25) |
 |---|---|---|
 | Boseiju, Who Endures | Sorcery-speed, hits only nonbasic lands | Legendary Land. Channel ability is **instant-speed**, hits **artifact OR enchantment OR nonbasic land**. `{1}{G}` channel cost; reduces by `{1}` per legendary creature you control |
-| Otawara, Soaring City | Wasteland analog | Legendary Land. Channel `{2}{U}` is instant-speed; bounces target nonland permanent. Does NOT destroy lands. Modern has no Wasteland-equivalent |
+| Otawara, Soaring City | Wasteland analog | Legendary Land. Channel `{3}{U}` is instant-speed; bounces target artifact/creature/enchantment/planeswalker. Does NOT destroy lands. Modern has no Wasteland-equivalent. Scryfall oracle: `Channel — {3}{U}, Discard this card: Return target artifact, creature, enchantment, or planeswalker to its owner's hand. This ability costs {1} less to activate for each legendary creature you control.` |
 | Urza's Saga | Just a Tron piece | `Enchantment Land — Urza's Saga` (typed BOTH). Sage Saga (chapter II tutors construct, chapter III sacrifices to tutor MV-1 artifact). Tutors only MV-1 artifacts, not arbitrary artifacts |
 | Solitude / Subtlety / Endurance | MV 0 when evoke-pitched | MV is **the printed cost**: Solitude MV 5, Subtlety MV 4, Endurance MV 3 (all `Creature — Elemental Incarnation`). Evoke-pitch pays {0} mana but Chalice@5 still catches Solitude, Chalice@4 catches Subtlety, Chalice@3 catches Endurance. Mana value never changes |
 | Force of Negation | Just a Force of Will | MV 3 (NOT 5 — Force of Will is MV 5 in Legacy). Pitch alt-cast off-turn requires blue card exile. Chalice@3 catches it always |
-| Phelia, Exuberant Shepherd | A token-maker | MV 2 Legendary Creature — Dog with Flash. Whenever it attacks, exiles a nonland permanent until end step; if that card entered under your control, +1/+1 counter on Phelia. Critical Modern blink/Boros anchor |
+| Phelia, Exuberant Shepherd | A token-maker | MV 2 Legendary Creature — Dog with Flash. On attack, exile up to one other target nonland permanent; at the beginning of the next end step, return that card to the battlefield under its owner's control. The +1/+1 counter trigger fires on the RETURN step — only if the returned card enters under your control (e.g., you blinked your own permanent, or theft-edge cases). Targeting an opp's permanent returns it under their control (no counter). Scryfall oracle: `Flash / Whenever Phelia attacks, exile up to one other target nonland permanent. At the beginning of the next end step, return that card to the battlefield under its owner's control. If it entered under your control, put a +1/+1 counter on Phelia.` Critical Modern blink/Boros anchor |
 | Mishra's Bauble | Cantrip | MV 0 Artifact. `{T}, Sacrifice this artifact: Look at the top card of target player's library. Draw a card at the beginning of the next turn's upkeep.` The DRAW happens — so it triggers Bowmasters next upkeep. The "look" itself doesn't |
 | Ragavan, Nimble Pilferer | Legal in both formats | Legal in **Modern only** (`legacy=banned`). Hard Modern signal in Step 0. The "Treasure tokens + impulse-draw" trigger fires on combat damage to a player |
 | Ajani, Nacatl Pariah | Just a creature | MDFC (modal double-faced card). Front: Legendary Creature — Cat Warrior (MV 2). Back: Legendary Planeswalker — Ajani (Ajani, Nacatl Avenger). Boros Aggro anchor |
@@ -35,7 +35,7 @@ Mana value is the printed mana cost. Alternative casts do NOT change mana value.
 | Mishra's Bauble | 0 | None | Chalice@0 |
 | Mox Opal | 0 | None | Chalice@0 |
 | Ragavan, Nimble Pilferer | 1 | Dash `{2}{R}` | Chalice@1 catches the normal cast; dash cost is `{2}{R}` paid cost but MV remains 1 |
-| Vexing Bauble | 0 | None | Chalice@0; Vexing Bauble also affects opp's MV-0 spells |
+| Vexing Bauble | 1 | None | Chalice@1; Vexing Bauble's static counters opp's MV-0 spells (no mana paid). Scryfall: `mana_cost='{1}'`, `cmc=1.0` |
 | Cori-Steel Cutter | 2 | None | Chalice@2 |
 
 ## Top Staples by Archetype (Modern, May 2026)
@@ -73,8 +73,8 @@ Per-archetype anchor card sets observed in the 10 samples at `../samples/modern/
 4 Phelia, Exuberant Shepherd     MV 2 flash blink-attacker
 4 Fatal Push                     black removal
 4 Thoughtseize                   discard
-4 Prismatic Ending               flex removal
-3 Teferi, Time Raveler           static "can only cast on your turn" lock
+1 Prismatic Ending               flex removal (this-sample count: 1 in `samples/modern/Modern_Blink_by_Barneygumbal.txt` line 34; meta-typical can run up to 4)
+2 Teferi, Time Raveler           static "can only cast on your turn" lock (this-sample count: 2 in `samples/modern/Modern_Blink_by_Barneygumbal.txt` line 36; meta-typical 2-3)
 ```
 
 ### UR Aggro (4% — Cori Prowess)
@@ -93,12 +93,12 @@ Per-archetype anchor card sets observed in the 10 samples at `../samples/modern/
 ### UrzaTron (4%)
 
 ```
-4 Urza's Mine + Urza's Power Plant + Urza's Tower    "Tron" — all 3 add {C}{C} / {C}{C}{C} when complete
+4 Urza's Mine + Urza's Power Plant + Urza's Tower    When all three Urza-land pieces are in play (Tron complete): Mine={C}{C}, Power Plant={C}{C}, Tower={C}{C}{C}. Total 7 colorless mana when all three tap together.
 4 Expedition Map                 tutor for any land (MV 1)
 4 Karn, the Great Creator        MV 4 wishboard planeswalker
 4 Thought-Knot Seer              Eldrazi MV 4 ETB-discard
 4 Talisman of Resilience         2-color ramp artifact MV 2
-+ Eldrazi shell (Sowing Mycospawn, Devourer of Destiny, Ulgin's Labyrinth)
++ Eldrazi shell (Sowing Mycospawn, Devourer of Destiny, Ugin's Labyrinth)
 ```
 
 ### Ruby Storm (4% — UR ritual storm)
@@ -116,7 +116,7 @@ Per-archetype anchor card sets observed in the 10 samples at `../samples/modern/
 ### Eldrazi Ramp (3%)
 
 ```
-4 Talisman of Impulse             MV 2 UR ramp
+4 Talisman of Impulse             MV 2 RG ramp (Scryfall `produced_mana: ['C', 'G', 'R']`; matches the RG `Modern_Eldrazi_Ramp_by_Mickael_Gervais.txt` sample)
 4 Malevolent Rumble              {1}{G} mill-self for big mana fix
 4 Utopia Sprawl                   1 G enchant land for ramp
 + Eldrazi shell (Eldrazi Temple, Ugin's Labyrinth, Sowing Mycospawn, Devourer of Destiny, Kozilek's Command)
@@ -152,7 +152,7 @@ Per-archetype anchor card sets observed in the 10 samples at `../samples/modern/
 4 Spelunking                    "lands ETB untapped"
 4 Arboreal Grazer                1 G ramp creature
 4 Green Sun's Zenith             X G G tutor
-+ Bounce-land manabase (Simic Growth Chamber, Gruul Turf, Crumbling Vestige)
++ Bounce-land manabase (Simic Growth Chamber, Gruul Turf) plus tap-land color fixers (Crumbling Vestige — ETB-tapped, adds one mana of any color on ETB, taps for {C} thereafter; NOT a bounce-land, but interacts with Amulet of Vigor differently). Scryfall oracle for Crumbling Vestige: `This land enters tapped. / When this land enters, add one mana of any color. / {T}: Add {C}.`
 + Primeval Titan finisher
 ```
 
@@ -177,7 +177,7 @@ Indatha Triome, Ketria Triome, Raugrin Triome, Savai Triome, Zagoth Triome, etc.
 ### Utility lands (Modern's signature category)
 
 - **Boseiju, Who Endures** (Kamigawa NEO): MV 0 Legendary Land, taps for G. **Channel `{1}{G}`, discard: destroy target artifact/enchantment/nonbasic land an opponent controls.** Cost reduces by {1} per legendary creature controlled. Instant-speed.
-- **Otawara, Soaring City**: MV 0 Legendary Land, taps for U. Channel `{2}{U}`, discard: bounce target nonland permanent.
+- **Otawara, Soaring City**: MV 0 Legendary Land, taps for U. Channel `{3}{U}`, discard: bounce target artifact/creature/enchantment/planeswalker. Cost reduction: {1} less per legendary creature you control. Scryfall oracle: `Channel — {3}{U}, Discard this card: Return target artifact, creature, enchantment, or planeswalker to its owner's hand. This ability costs {1} less to activate for each legendary creature you control.`
 - **Urza's Saga**: Enchantment Land, NOT Legendary. Sage saga chapters; III sacrifices for MV-1 artifact tutor. Tutorable by Karn the Great Creator (artifact tutor — no, Karn fetches from outside the game).
 
 ### Tron pieces
@@ -239,7 +239,7 @@ Flurry: "When you cast your second spell each turn". Cast triggers on the *cast 
 
 Cascade exiles cards from the top of library until a card with lower MV is hit, then casts it. Modern restricts cascade interactions:
 - Cascade triggers find the first lower-MV spell, NOT a spell you choose.
-- Living End is MV 3 (`{2}{B}` — verify) and is the typical cascade target.
+- Living End is MV 0 (no mana cost — castable only via Suspend or Cascade). Suspend cost: 3 turns, `{2}{B}{B}`. Cascade hits because CMC=0 satisfies any cascade source's MV-comparison condition. Scryfall: `mana_cost=''`, `cmc=0.0`, oracle has `Suspend 3—{2}{B}{B}`.
 - Banlist watches: cards like Tibalt's Trickery and Crashing Footfalls have had B&R action historically; verify current legality before recommending cascade plans.
 
 ## Cards That Look Played But Aren't (Modern, May 2026)
@@ -261,7 +261,8 @@ Modern's meta turns over fast. Cards I expected to see in the top 10 but did NOT
 
 Per Scryfall verification on the build day:
 
-- **Brainstorm, Ponder, Daze, Force of Will** — `not_legal` in Modern (never been in Modern's card pool — they predate Modern's start point).
+- **Brainstorm, Daze, Force of Will** — `not_legal` in Modern (never been in Modern's card pool — they predate Modern's start point).
+- **Ponder** — banned in Modern (Scryfall: `banned:modern`, verified 2026-05-25; `legalities.modern='banned'`, `legalities.legacy='legal'`). Originally legal at Modern's introduction (in Modern's card pool via M11, M12, Modern Masters reprints), banned subsequently. Legal in Legacy.
 - **All original-dual lands** (Volcanic Island, Underground Sea, Tundra, Tropical Island, Bayou, Plateau, Savannah, Scrubland, Badlands, Taiga) — `not_legal` in Modern.
 
 Notably **legal-in-Modern as of 2026-05-25 verification** despite past B&R drama:

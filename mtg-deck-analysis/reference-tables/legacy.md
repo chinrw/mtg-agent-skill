@@ -58,7 +58,7 @@ When evaluating a lock card's matchup impact, compute **two** probabilities:
 1. P(you assemble the lock on T1 — before opp deploys)
 2. P(you assemble it later — only future copies matter)
 
-The second number is usually much weaker than the first. See `tooling-notes.md` for the hypergeometric template that handles this asymmetry.
+The second number is usually much weaker than the first. See `SKILL.md` Step 6 (Deterministic Validators section, `joint_n_cards` function) for the hypergeometric template that handles this asymmetry.
 
 ## Does It Trigger Orcish Bowmasters?
 
@@ -265,7 +265,7 @@ Each is "Land — [Type1] [Type2]" with no ETB drawback. Fetchable by basic-type
 | Karakas | Legendary Land. T: Add W. T: Return target legendary creature to owner's hand |
 | Cavern of Souls | On ETB, name a creature type. T: Add C. T: Add 1 of any color, spent only on a creature spell of the chosen type — that spell can't be countered |
 | The Tabernacle at Pendrell Vale | Legendary Land. T: Add C. Creatures have "At your upkeep, sac unless controller pays {1}" |
-| Boseiju, Who Endures | Legendary Land — Mountain. T: Add G. Channel {1}{G}, discard: Destroy target nonbasic land OR artifact OR enchantment opp controls; opp may find a basic |
+| Boseiju, Who Endures | Legendary Land (no basic subtype — NOT fetchable by Wooded Foothills / Stomping Ground / any basic-typed fetch; Blood Moon WILL turn it into a Mountain). T: Add G. Channel {1}{G}, discard: Destroy target nonbasic land OR artifact OR enchantment opp controls; opp may find a basic |
 | Mishra's Factory | T: Add C. {1}: Becomes 2/2 Assembly-Worker artifact creature until end of turn. {1}, T: Other Assembly-Workers get +1/+1 until end of turn |
 | Ancient Tomb | T: Add CC. Deals 2 damage to you |
 | City of Traitors | T: Add CC. When you play another land, sacrifice this |
@@ -367,7 +367,7 @@ Cards that training data and casual reputation suggest are Legacy staples, but *
 | Snapcaster Mage | "Blue tempo staple" | Single splash in UWx Control; not in any tempo deck | Largely replaced by Murktide / Cori-Steel Cutter |
 | Mishra's Workshop | "Stax enabler" | BANNED in Legacy — fetched live, line "Mishra's Workshop" under Legacy Banned Cards | Use Urza's-typed lands (Urza's Saga / Workshop BRC) instead |
 
-**Always run Step 4b** (decklist parser in `tooling-notes.md`) before listing what a lock card catches. Citing an obsolete card to justify a meta read invalidates the analysis.
+**Always run Step 4b** (decklist parser in `SKILL.md` Step 1, input-format spec) before listing what a lock card catches. Citing an obsolete card to justify a meta read invalidates the analysis.
 
 # Common Mistakes Reference
 

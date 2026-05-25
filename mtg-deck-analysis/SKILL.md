@@ -16,6 +16,7 @@ Core principle: **A card's name, your recall of it, or an analogy is not evidenc
 
 - Decklist evaluation
 - "Should I add card X to deck Y" — for this specific question, invoke the sibling `mtg-card-evaluation` skill via the Skill tool (see **Sub-Skills and References** below)
+- For "how does card X fit format Y's current meta?" questions (no target deck given) — invoke the sibling `mtg-card-evaluation` skill in **Mode B (card-in-meta positioning)**.
 - Comparing two decks
 - Predicting matchup performance vs current meta
 - Probability or math questions about a deck
@@ -53,6 +54,8 @@ This applies to **every** card you cite — not only the ones being analyzed. Ca
 
    The skill refuses to proceed until the user answers.
 
+3. **Rule 3 — Unsupported formats.** If the user explicitly requests a format outside `{legacy, modern}` (e.g., Pioneer, Pauper, Standard, Commander), refuse with: 'This skill currently supports Legacy and Modern only. Please rephrase as a Legacy or Modern question, or invoke a different skill that targets your format.' Do NOT silently fall through to a default format.
+
 **Why this is simple by design:** previous drafts of Step 0 tried to auto-decide format from "hard signal" card lists. That approach failed twice during skill authoring — first by misclassifying Boseiju's speed/scope, then by classifying Solitude/Subtlety/Endurance as hard Modern signals when they're actually legal in both formats. The taxonomy is fragile because B&R announcements change card legality every few months, and a 6-month-stale signal list silently produces wrong format identifications. Asking the user is robust against B&R drift; auto-detection isn't.
 
 **Optional hint reference (suggestion only — never a decision):**
@@ -67,9 +70,9 @@ These lists are only for forming the hint sentence; the user's answer is what ge
 
 **Output of Step 0:** state the identified format and the evidence:
 
-> "Format: Modern (heuristic: 4 Ragavan + 4 Wrenn and Six in mainboard)"
+> "Format: Modern (user-confirmed; cited evidence: 4 Ragavan + 4 Wrenn and Six in mainboard)"
 
-> "Format: Legacy (explicit prefix in user input)"
+> "Format: Legacy (explicit format prefix in user input)"
 
 > "Format: ASKING USER — input cards [Lightning Bolt, Counterspell, Force of Will] legal in both formats."
 
@@ -156,6 +159,19 @@ done
 - **Rate limit**: 429 means slow down. Default `sleep 0.12`. Respect any `Retry-After` header.
 - **Don't trust the search endpoint** for exact lookups — use `/cards/named`.
 
+### Scryfall — Banlist (Live, Primary)
+
+```bash
+# Substitute <format> with: legacy, modern, etc.
+curl -sS \
+  -H 'User-Agent: mtg-agent-skill/1.0' \
+  -H 'Accept: application/json' \
+  'https://api.scryfall.com/cards/search?q=banned%3A<format>&order=name' \
+  | jq -r '.data[].name'
+```
+
+Returns one banned card name per line. Use this as the PRIMARY banlist source per Step 3.
+
 ### Wizards B&R — Banlist (Live)
 
 ```bash
@@ -241,7 +257,7 @@ FMT = "LE"  # or "MO" — bind from Step 0 result, do not hardcode
 fmt_page = fetch(f"https://www.mtgtop8.com/format?f={FMT}")
 archetypes = re.findall(r'archetype\?a=(\d+)[^"]+>([^<]+)</a>', fmt_page)
 # Legacy examples: 213 → UR Tempo, 1606 → Dimir Tempo, 553 → Eldrazi Aggro
-# Modern examples: TBD on Phase 3 fetch day; populate from mtgtop8 /format?f=MO
+# Modern examples: populated from mtgtop8 fetch 2026-05-25; check current top-archetype IDs at mtgtop8.com/format?f=MO
 
 # 2. List recent decks for an archetype (note: meta code changes per period AND per format)
 arch_page = fetch(f"https://www.mtgtop8.com/archetype?a=213&meta=338&f={FMT}")
@@ -486,10 +502,11 @@ def archetype_similarity(user_mainboard, sample_files):
     return sorted(results, key=lambda r: -r[1])
 
 # Usage — pull samples from the format-aware directory via format_data.py:
-# >>> from format_data import ARCHETYPE_SAMPLE_DIRS
-# >>> import glob, os
-# >>> sample_dir = ARCHETYPE_SAMPLE_DIRS[format]  # format from Step 0
-# >>> files = glob.glob(os.path.join(sample_dir, "*.txt"))
+# >>> from pathlib import Path
+# >>> import format_data
+# >>> skill_root = Path(format_data.__file__).parent
+# >>> sample_dir = skill_root / format_data.ARCHETYPE_SAMPLE_DIRS[fmt]  # fmt from Step 0
+# >>> files = sorted(str(p) for p in sample_dir.glob("*.txt"))
 # >>> archetype_similarity(user_mb, files)
 # Legacy example:
 # [('samples/legacy/Legacy_UR_Tempo_by_silviawataru.txt', 78.4, 23),
@@ -571,61 +588,79 @@ CANTRIPS = {
     "Consider":   dict(look=1, keep=0, draws=1, shuffles=False),  # legal both — Modern-meta cantrip
     "Stock Up":   dict(look=5, keep=2, draws=0, shuffles=False),  # legal both
     "Flow State": dict(look=3, keep=1, draws=0, shuffles=False),  # legal both
-    "Lorien Revealed": dict(look=0, keep=0, draws=3, shuffles=False),  # cast mode
+    "Lorien Revealed": dict(look=3, keep=0, draws=3, shuffles=False),  # cast mode
     "Mishra's Bauble": dict(look=1, keep=0, draws=1, shuffles=False),  # top of YOUR library, delayed draw
     "Thundertrap Trainer": dict(look=4, keep=1, draws=0, shuffles=False),  # Legacy mostly
     "Otherworldly Gaze": dict(look=3, keep=0, draws=0, shuffles=False),  # Modern (surveil 3)
     "Expressive Iteration": dict(look=3, keep=2, draws=0, shuffles=False),  # Modern only (Legacy-banned)
     "Reckless Impulse": dict(look=2, keep=2, draws=0, shuffles=False),  # impulse-exile cast (legal both)
     "Wrenn's Resolve": dict(look=2, keep=2, draws=0, shuffles=False),    # impulse-exile cast (legal both)
-    "Manamorphose": dict(look=0, keep=0, draws=1, shuffles=False),       # ritual + cantrip (legal both)
+    "Manamorphose": dict(look=1, keep=0, draws=1, shuffles=False),       # ritual + cantrip (legal both)
 }
 
 # Filter to format-legal cantrips before counting from a decklist:
 #   legal_cantrips = {n: c for n, c in CANTRIPS.items() if n in CANTRIP_POOLS[format]}
 # Use legal_cantrips in cantrip_depth() below.
 
-def cantrip_depth(deck_cantrips_count, turn, on_play=True, format="legacy"):
+def cantrip_depth(deck_cantrips_count, turn, on_play, format):
     """
     Estimate effective cards seen by turn N given cantrip density.
 
     deck_cantrips_count: dict {cantrip_name: count_in_deck}
     turn:    which turn you're computing through
     on_play: True if you're on the play (no T1 draw)
-    format:  "legacy" or "modern" — used to filter cantrips by per-format legality
+    format:  REQUIRED. "legacy" or "modern" — used to filter cantrips by per-format
+             legality. Mandatory under the v5 format-binding rules (Step 0 binds
+             the format string for the entire run; no silent defaulting).
 
-    Returns: (cards_drawn_raw, effective_cards_seen_upper_bound)
+    Returns: (cards_drawn_raw, effective_cards_seen_upper_bound, dropped)
+      - cards_drawn_raw: raw card-draw count by turn N
+      - effective_cards_seen_upper_bound: ceiling including cantrip "look" depth
+      - dropped: list of cantrip names that were not legal in the bound format
 
     Upper bound assumes every cantrip is drawn AND cast — actual will be lower.
     Treat the second number as a ceiling, not an expectation. Cantrips not legal
-    in the bound format are silently dropped from the count (with a warning).
+    in the bound format are dropped from the count and returned in `dropped`.
+    Callers receive the `dropped` list and may warn/log on it themselves — this
+    function performs no I/O.
     """
+    fmt = format.strip().lower()
+    if fmt not in CANTRIP_POOLS:
+        raise ValueError(f"format must be one of {sorted(CANTRIP_POOLS)}, got {format!r}")
+    legal_for_format = set(CANTRIP_POOLS[fmt])
     raw_draws = 7 + (turn - 1) + (0 if on_play else 1)
     drawn_fraction = min(0.6, 0.2 * turn)
-    legal_for_format = set(CANTRIP_POOLS[format])
     extra_seen = 0
     dropped = []
     for name, ct in deck_cantrips_count.items():
-        if name not in legal_for_format:
+        if not isinstance(name, str) or not name:
             dropped.append(name)
             continue
-        cantrip = CANTRIPS.get(name)
+        canonical = name.strip().strip('"\'').split(' // ')[0].strip()
+        if canonical not in legal_for_format:
+            dropped.append(name)
+            continue
+        cantrip = CANTRIPS.get(canonical)
         if not cantrip:
             continue
         copies_drawn = ct * drawn_fraction
         extra_seen += copies_drawn * cantrip["look"]
-    if dropped:
-        print(f"  [cantrip_depth] dropped (not legal in {format}): {dropped}")
-    return raw_draws, raw_draws + int(extra_seen)
+    return raw_draws, raw_draws + int(extra_seen), dropped
 
-def p_find_target_with_cantrips(N, K, deck_cantrips_count, turn, on_play=True, format="legacy"):
+def p_find_target_with_cantrips(N, K, deck_cantrips_count, turn, on_play, format):
     """
     Upper bound on P(see >=1 of target by turn N) accounting for cantrip selection.
     See cantrip_depth for caveats — this is a CEILING, not an exact probability.
 
+    format: REQUIRED. "legacy" or "modern". Mandatory under v5 format-binding
+            rules — no silent default. The format string must come from Step 0.
+
     For a precise answer on a specific game state, simulate.
     """
-    raw, eff = cantrip_depth(deck_cantrips_count, turn, on_play, format)
+    fmt = format.strip().lower()
+    if fmt not in CANTRIP_POOLS:
+        raise ValueError(f"format must be one of {sorted(CANTRIP_POOLS)}, got {format!r}")
+    raw, eff, _dropped = cantrip_depth(deck_cantrips_count, turn, on_play, fmt)
     p_raw = 1 - comb(N - K, raw) / comb(N, raw) if N - K >= raw else 1.0
     p_eff = 1 - comb(N - K, eff) / comb(N, eff) if N - K >= eff else 1.0
     return {"P_raw": round(p_raw, 4), "P_with_cantrips_upper_bound": round(p_eff, 4)}
@@ -634,8 +669,8 @@ def p_find_target_with_cantrips(N, K, deck_cantrips_count, turn, on_play=True, f
 # >>> p_find_target_with_cantrips(60, 4,
 # ...     {"Brainstorm": 4, "Ponder": 4, "Flow State": 4}, turn=3, on_play=False,
 # ...     format="legacy")
-# {'P_raw': 0.4992, 'P_with_cantrips_upper_bound': 0.9091}
-# True P is somewhere in [0.50, 0.91]; cantrips bias toward keeping good cards.
+# {'P_raw': 0.5277, 'P_with_cantrips_upper_bound': 0.9513}
+# True P is somewhere in [0.53, 0.95]; cantrips bias toward keeping good cards.
 
 # Usage (Modern UR Aggro looking for Cori-Steel Cutter by T2 on the play):
 # >>> p_find_target_with_cantrips(60, 4,
@@ -692,6 +727,7 @@ Two kinds of opt-in content. Each loads only when the analysis needs it.
 ### Sibling skill — invoke via the Skill tool
 
 - **`mtg-card-evaluation`** — Five-lens scoring framework for "does card X fit deck Y" with worked examples. Invoke via `Skill` tool with `skill='mtg-card-evaluation'` whenever the question is specifically about whether a single card belongs in a single deck (inclusion, replacement-after-ban, sideboard slot, set-release evaluation). Treat its scorecard + verdict as the inclusion answer; integrate it into your evidence-labeled response. Do NOT inline the five lenses by hand — invoke the skill so its tests and worked examples stay authoritative.
+  - The skill has two modes: **Mode A** (card vs single deck — the inclusion question above) and **Mode B** (card vs current meta — "how does card X fit format Y's current meta?" with no target deck given). Pick the mode that matches the question.
 
 ### Supporting files in this skill — load via `Read`, branched by format
 
@@ -700,7 +736,7 @@ Two kinds of opt-in content. Each loads only when the analysis needs it.
 
 The Skill tool loads `SKILL.md` only. All tooling commands are inline above — supporting files contain reference data, not procedural steps. The sibling `mtg-card-evaluation` skill is a separate skill load, not a Read of a file inside this directory.
 
-**Note on format-awareness:** Phase 1 of the multi-format restructure has moved Legacy data into `reference-tables/legacy.md` and `samples/legacy/`. Modern data is stubbed at `reference-tables/modern.md` and `samples/modern/README.md` pending Phase 3–4 (see `PLAN-modern-mode-b.md`). The mandatory format-identification Step 0 lands in Phase 2.
+**Note on format-awareness:** Phases 1-5 of the multi-format restructure are shipped: Legacy data is in `reference-tables/legacy.md` and `samples/legacy/`, Modern data is in `reference-tables/modern.md` and `samples/modern/`, and `format_data.py` carries per-format constants.
 
 ## Using Sample Decklists
 
@@ -742,7 +778,7 @@ When parsing a user paste, be tolerant of these variations:
 - If no `Sideboard` label and the list has 75 lines, treat the last 15 as SB; if 65, last 15; otherwise ask the user to disambiguate
 - MDFCs may be written as `Tamiyo, Inquisitive Student` or `Tamiyo, Inquisitive Student // Tamiyo, Seasoned Scholar` — verify via Scryfall regardless
 
-After parsing, sum the counts; reject a paste where mainboard ≠ 60 (or ≠ 80 for Yorion companion decks) or sideboard ≠ 15, and ask the user to confirm.
+After parsing, sum the counts; reject a paste where mainboard ≠ 60 (or ≠ 80 for Yorion companion decks) or sideboard > 15 or sideboard < 0, and ask the user to confirm. Modern/Legacy allow sideboards ≤ 15 — a 14-card sideboard is legal (e.g., the shipped UW Control sample under `samples/modern/`).
 
 ### Regression-testing the skill itself
 
@@ -776,13 +812,13 @@ GREEN-verified by subagent test 2026-05-25: applied to a fresh Trinisphere meta 
 
 v4 (2026-05-25): repo restructured — each skill is its own folder at the repo root. The five-lens inclusion framework moved out of this directory (`mtg-card-evaluation.md`) and became a sibling skill (`mtg-card-evaluation/SKILL.md`), invoked via the Skill tool when an inclusion question arises. Motivation: name-folder correspondence so each skill installs independently, and the inclusion framework is reusable (callable standalone via `/mtg-card-evaluation`, not gated behind a full deck-analysis pass).
 
-v5 Phase 1 (2026-05-25): multi-format restructure preparation. Per `PLAN-modern-mode-b.md`. File moves: `reference-tables.md` → `reference-tables/legacy.md`; `samples/` → `samples/legacy/`. Stubs created for Modern: `reference-tables/modern.md` (Live Banlist sources canonical, rest TODO Phase 4) and `samples/modern/README.md` (TODO Phase 3). Step 3 updated to prefer Scryfall API banlist endpoint (`https://api.scryfall.com/cards/search?q=banned%3A<format>`) over Wizards HTML, with both URLs documented per format in their `reference-tables/<format>.md`. **Phase 1 leaves the skill fully functional for Legacy** via the new paths; Modern data populates in Phases 3–4. Step 0 (mandatory format identification) lands in Phase 2.
+v5 Phase 1 (2026-05-25): multi-format restructure preparation. Per `PLAN-modern-mode-b.md`. File moves: `reference-tables.md` → `reference-tables/legacy.md`; `samples/` → `samples/legacy/`. Stubs created for Modern: `reference-tables/modern.md` (populated in Phase 4) and `samples/modern/README.md` (populated in Phase 3). Step 3 updated to prefer Scryfall API banlist endpoint (`https://api.scryfall.com/cards/search?q=banned%3A<format>`) over Wizards HTML, with both URLs documented per format in their `reference-tables/<format>.md`. **Phase 1 leaves the skill fully functional for Legacy** via the new paths; Modern data populates in Phases 3–4. Step 0 (mandatory format identification) lands in Phase 2.
 
-v5 Phase 5 (2026-05-25): format_data.py module added at `mtg-deck-analysis/format_data.py`. Importable Python module exporting per-format constants: CANTRIP_POOLS (8 Legacy + 11 Modern cantrips, each Scryfall-verified for format legality and draw/filter effect), ARCHETYPE_SAMPLE_DIRS, WASTELAND_ANALOG, CHALICE_VULNERABILITY (per Chalice setting × format), FORMAT_CODES (mtgtop8 URL params + Scryfall banlist queries + Wizards page section anchors). Validators in SKILL.md updated: `cantrip_depth(...)` and `p_find_target_with_cantrips(...)` now accept `format=` keyword and filter the cantrip count dict by `CANTRIP_POOLS[format]`, with explicit warning when cards are dropped (e.g., `[cantrip_depth] dropped (not legal in modern): ['Brainstorm', 'Ponder']`). Catalog grew from 8 → 15 cantrips (added Opt, Consider, Otherworldly Gaze, Expressive Iteration, Reckless Impulse, Wrenn's Resolve, Manamorphose). `archetype_similarity()` example usage shows the `ARCHETYPE_SAMPLE_DIRS[format]` lookup. **File name uses underscore** (`format_data.py`) not hyphen — required for Python `from format_data import` to work. Module ships a `_self_check()` runnable via `python3 format_data.py` to assert all per-format dicts have matching keys and no duplicates. GREEN-verified live: same `p_find_target_with_cantrips` query under `format='legacy'` returns ceiling 0.879 (Brainstorm/Ponder counted); under `format='modern'` returns ceiling 0.528 (cantrips correctly dropped with printed warning).
+v5 Phase 5 (2026-05-25): format_data.py module added at `mtg-deck-analysis/format_data.py`. Importable Python module exporting per-format constants: CANTRIP_POOLS (13 Legacy + 11 Modern cantrips, 15 unique across both formats, each Scryfall-verified for format legality and draw/filter effect), ARCHETYPE_SAMPLE_DIRS, WASTELAND_ANALOG, CHALICE_VULNERABILITY (per Chalice setting × format), FORMAT_CODES (mtgtop8 URL params + Scryfall banlist queries + Wizards page section anchors). Validators in SKILL.md updated: `cantrip_depth(...)` and `p_find_target_with_cantrips(...)` now accept `format=` keyword and filter the cantrip count dict by `CANTRIP_POOLS[format]`, returning a `dropped` list (e.g., `['Brainstorm', 'Ponder']` when called under `format='modern'`) so callers can log or warn without this function performing I/O. Catalog grew from 8 → 15 cantrips (added Opt, Consider, Otherworldly Gaze, Expressive Iteration, Reckless Impulse, Wrenn's Resolve, Manamorphose). `archetype_similarity()` example usage shows the `ARCHETYPE_SAMPLE_DIRS[format]` lookup. **File name uses underscore** (`format_data.py`) not hyphen — required for Python `from format_data import` to work. Module ships a `_self_check()` runnable via `python3 format_data.py` to assert all per-format dicts have matching keys and no duplicates. GREEN-verified live: same `p_find_target_with_cantrips` query ({'Brainstorm': 4, 'Ponder': 4, 'Flow State': 4}, T3 on the draw) under `format='legacy'` returns ceiling 0.9513 (Brainstorm/Ponder counted); under `format='modern'` returns ceiling 0.7469 (Brainstorm and Ponder correctly dropped, only Flow State counted).
 
 v5 Phase 4 (2026-05-25): Modern reference table content populated. `reference-tables/modern.md` now mirrors `legacy.md`'s structure with Modern-specific content: Card Name Pitfalls (Boseiju instant-speed/3-type targeting, evoke-pitch elementals MV != paid cost, MDFCs like Ajani/Ral, Cori-Steel Cutter Flurry trigger, Sowing Mycospawn Legacy-banned-not-Modern), Mana Value vs Paid Cost table (Solitude=5, Subtlety=4, Endurance=3, FoN=3), Top Staples by Archetype (per-archetype 4-of cards observed in the 10 Phase 3 samples), Manabase Patterns (fetchlands + shocklands + Surveil lands + Triomes + utility lands + Tron pieces), Format-Specific Interaction Pitfalls (FoN vs FoW cost difference, Triome ETB-tapped affects T1, Karn wishboards, Cascade), "Looks Played But Isn't" with verified-absent expected staples (Wrenn and Six, Murktide, Yawgmoth not in current top 10), "Looks Modern But Isn't" with Scryfall-verified banlist state. All cards in the file batch-verified via Scryfall cards/collection endpoint (61/61 found on first call). GREEN-verified by subagent: 6/6 checks pass on Boseiju oracle, evoke MVs, Legacy-banned/Modern-legal trio (Ragavan/Expressive Iteration/Sowing Mycospawn), Boros Aggro staples cross-checked against sample, Tron typeline (Land — Urza's Power-Plant with hyphen), and Live Banlist Verification Sources section presence. **Phase 4 makes the skill fully functional for Modern analyses** end-to-end.
 
-v5 Phase 3 (2026-05-25): Modern samples populated. 10 Modern decklists fetched live from mtgtop8 (meta=54), one per top-meta archetype as of fetch date: Boros Aggro (12%), Affinity (12%), Blink (7%), UR Aggro (4%), UrzaTron (4%), Ruby Storm (4%), Eldrazi Ramp (3%), UW Control (3%), Living End (3%), Amulet Titan (3%). Files at `samples/modern/Modern_<Archetype>_by_<Player>.txt`, each with canonical header (Format / Archetype / Player / Tournament / Source URL / Fetched date / Tournament date / Mainboard count / Sideboard count). README index updated. All MB=60; one SB=14 (UW Control, legal — sideboards are ≤15 not =15). Modern meta turned out different from plan assumptions (no Yawgmoth Pod, no Hammer Time at the top — Boros Aggro and Affinity dominate). Phase 4 (Modern reference table content) still pending.
+v5 Phase 3 (2026-05-25): Modern samples populated. 10 Modern decklists fetched live from mtgtop8 (meta=54), one per top-meta archetype as of fetch date: Boros Aggro (12%), Affinity (12%), Blink (7%), UR Aggro (4%), UrzaTron (4%), Ruby Storm (4%), Eldrazi Ramp (3%), UW Control (3%), Living End (3%), Amulet Titan (3%). Files at `samples/modern/Modern_<Archetype>_by_<Player>.txt`, each with canonical header (Format / Archetype / Player / Tournament / Source URL / Fetched date / Tournament date / Mainboard count / Sideboard count). README index updated. All MB=60; one SB=14 (UW Control, legal — sideboards are ≤15 not =15). Modern meta turned out different from plan assumptions (no Yawgmoth Pod, no Hammer Time at the top — Boros Aggro and Affinity dominate). Phase 4 (Modern reference table content) shipped subsequently — see Phase 4 entry above.
 
 v5 Phase 2 (2026-05-25): mandatory Step 0 added. Workflow now starts with **Step 0 — Identify the format**, refuses to proceed without an identified format ∈ {legacy, modern}. Iron Law gains a second clause: "NO ANALYSIS WITHOUT AN IDENTIFIED FORMAT". Format-binding discipline added: the format string is bound for the run and never silently swapped mid-analysis. Tooling block updated: mtgtop8 URLs use `?f={FMT}` template (Legacy `LE`, Modern `MO`, both verified live 2026-05-25 returning correct format pages). Step 4 updated to reference the format-bound URL.
 

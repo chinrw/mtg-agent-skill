@@ -71,16 +71,25 @@ mtg-agent-skill/
 ├── SKILL.md                # main workflow + all tooling commands inline
 ├── reference-tables.md     # heavy lookup data — card pitfalls, manabase, sideboard, combo tables
 ├── mtg-card-evaluation.md  # five-lens framework for "does card X fit deck Y"
-└── samples/                # example input decklists used during skill development
-    ├── Legacy_12_-_Post_by_sm294.txt
-    └── Legacy_Trini_Tron_Karn_by_SinKarma.txt
+└── samples/                # real Legacy decklists used as skill test input
+    ├── README.md           # index — archetype, player, tournament, source URL per file
+    ├── Legacy_12_-_Post_by_sm294.txt              # Cloudpost / Blue Post (user-submitted)
+    ├── Legacy_Trini_Tron_Karn_by_SinKarma.txt     # Trini Tron / Artifact Karn (user-submitted)
+    ├── Legacy_UR_Tempo_by_silviawataru.txt        # UR Delver / Tempo
+    ├── Legacy_Dimir_Tempo_by_kyataoka.txt         # Dimir Tempo
+    ├── Legacy_Eldrazi_Aggro_by_Schmeckles.txt     # Eldrazi Aggro
+    ├── Legacy_UWx_Control_by_habsburger.txt       # UWx Control
+    ├── Legacy_Lands_by_Lincerastas.txt            # Lands (Mono-Green)
+    ├── Legacy_Doomsday_by_Sinflower.txt           # Doomsday (Tempo Flow)
+    ├── Legacy_Death_and_Taxes_by_l337erhosen.txt  # Death & Taxes (Yorion 80-card)
+    └── Legacy_Boros_Aggro_by_Mikebrav.txt         # Boros Aggro
 ```
 
 `SKILL.md` loads when the skill is invoked. The other markdown files load via `Read` only when an analysis actually needs them, to keep context lean.
 
 ## Sample input
 
-`samples/Legacy_12_-_Post_by_sm294.txt` and `samples/Legacy_Trini_Tron_Karn_by_SinKarma.txt` are real Legacy decklists that motivated the skill — the original analysis of them is what surfaced most of the failure modes the skill now prevents. Useful as smoke-test input when validating skill changes.
+`samples/` contains real Legacy decklists used as test input when validating skill changes. See `samples/README.md` for the full index with archetype, player, tournament, and mtgtop8 source URL per file. The two original user-submitted lists (`Legacy_12_-_Post_by_sm294.txt`, `Legacy_Trini_Tron_Karn_by_SinKarma.txt`) motivated the skill — the original analysis of them surfaced most of the failure modes the skill now prevents. The remaining eight files cover one representative recent decklist per top-meta Legacy archetype (UR Tempo, Dimir Tempo, Eldrazi Aggro, UWx Control, Lands, Doomsday, Death & Taxes, Boros Aggro), fetched from mtgtop8 in May 2026.
 
 ## Versions
 

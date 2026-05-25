@@ -35,7 +35,7 @@ mtg-agent-skill/
 │   ├── reference-tables/
 │   │   ├── legacy.md                          (renamed from reference-tables.md)
 │   │   └── modern.md                          (new)
-│   ├── format-data.py                         (new — cantrip pools, manabase patterns per format)
+│   ├── format_data.py                         (new — cantrip pools, manabase patterns per format)
 │   └── samples/
 │       ├── legacy/  (10 existing decks)
 │       └── modern/  (8–10 new decks)
@@ -123,12 +123,12 @@ Mirror structure of `legacy.md` but for Modern. Sections needed:
 5. **"Looks Modern but isn't" list** — cards banned in Modern that frequently get recalled wrongly: Hogaak, Lurrus (if currently banned — verify), Faithful Mending, Birthing Pod, etc.
 6. **Modern manabase math** — fetchland + shockland cycle, Surveil land cycle, Triomes; how `validate_manabase` should treat Triomes (ETB tapped affects T1 plays)
 
-### Phase 5 — `format-data.py` for format-specific validator config
+### Phase 5 — `format_data.py` for format-specific validator config
 
 Create a small Python module that the deterministic validators import:
 
 ```python
-# mtg-deck-analysis/format-data.py
+# mtg-deck-analysis/format_data.py
 
 CANTRIP_POOLS = {
     "legacy": ["Brainstorm", "Ponder", "Preordain", "Stock Up", "Flow State", "Mishra's Bauble"],
@@ -147,7 +147,7 @@ ARCHETYPE_SAMPLE_DIRS = {
 }
 ```
 
-The existing validators (`validate_manabase`, `check_four_of`, `archetype_similarity`, `joint_n_cards`, `p_find_target_with_cantrips`) take a `format=` keyword arg and consult `format-data.py` for cantrip pool and sample directory. Manabase color logic doesn't change (Scryfall `produced_mana` is universal).
+The existing validators (`validate_manabase`, `check_four_of`, `archetype_similarity`, `joint_n_cards`, `p_find_target_with_cantrips`) take a `format=` keyword arg and consult `format_data.py` for cantrip pool and sample directory. Manabase color logic doesn't change (Scryfall `produced_mana` is universal).
 
 **Verification gate:** every card name in `CANTRIP_POOLS` is a claim that gets re-verified via Scryfall live during analysis. The constants are starting points, not authoritative facts.
 
@@ -198,10 +198,10 @@ For each work item:
 | Risk | Likelihood | Mitigation |
 |---|---|---|
 | mtgtop8 Cloudflare blocks Modern fetch | Medium | Serial fetches with backoff; User-Agent rotation; fall back to manual paste if needed |
-| Modern banlist remembered wrong (e.g., Brainstorm assumed legal) | High if not verified | Iron Law: every cited card re-verified live via B&R fetch. format-data.py treated as starting hints not facts |
+| Modern banlist remembered wrong (e.g., Brainstorm assumed legal) | High if not verified | Iron Law: every cited card re-verified live via B&R fetch. format_data.py treated as starting hints not facts |
 | Mode A worked examples become inconsistent with Mode B examples | Medium | Reuse the same archetypes (e.g., Blue Post for Legacy Mode A, then a Modern card for Mode B) |
 | Format auto-detection misfires (Wasteland-less Legacy deck wrongly tagged Modern) | Low–Medium | Default to ASKING the user when ambiguous; never silently guess. Explicit "Legacy:" / "Modern:" prefix overrides detection |
-| Modern Python validators diverge from Legacy in ways the spec missed | Medium | Treat format-data.py as a thin config layer; if validator logic truly needs to branch (not just data), add a `format` keyword arg, don't fork the function |
+| Modern Python validators diverge from Legacy in ways the spec missed | Medium | Treat format_data.py as a thin config layer; if validator logic truly needs to branch (not just data), add a `format` keyword arg, don't fork the function |
 | GREEN test subagent doesn't see the format split and falls back to Legacy | Medium | Mode B test must be on a Modern card to force the format-aware path. Spec the test prompt to require "Modern: <card>" in the input |
 
 ## 6. Open questions — RESOLVED 2026-05-25
@@ -239,7 +239,7 @@ Lessons-learned note: the FIRST DRAFT of this preview said "sorcery-speed nonbas
 
 `mtg-deck-analysis/SKILL.md` workflow becomes Step 0 → Step 7 (plus 4b and 6b unchanged). Step 0 = identify the format. Skill refuses to proceed without it. Format is bound to the analysis for the rest of the run.
 
-### Q4. `format-data.py` shape — RESOLVED: real file at `mtg-deck-analysis/format-data.py`
+### Q4. `format_data.py` shape — RESOLVED: real file at `mtg-deck-analysis/format_data.py`
 
 Importable Python module. Exports `CANTRIP_POOLS`, `WASTELAND_ANALOG`, `ARCHETYPE_SAMPLE_DIRS`, etc. Validators in SKILL.md tooling block import from it: `from format_data import CANTRIP_POOLS; pool = CANTRIP_POOLS[format]`. One source of truth per-format constant.
 
@@ -294,7 +294,7 @@ Returns paginated JSON with `data[]` array of full card objects. Parse with `pyt
 | 2. Step 0 | 1 hour | Workflow text + Step 0 examples |
 | 3. Modern samples (8-10) | 2-3 hours | mtgtop8 fetch is the bottleneck |
 | 4. Modern reference table | 2-3 hours | Live verification of each cited card |
-| 5. format-data.py | 30-45 min | Small code surface |
+| 5. format_data.py | 30-45 min | Small code surface |
 | 6. Mode B framework | 1.5-2 hours | Skill text + worked example |
 | 7. TDD verification (RED + GREEN per item) | 1.5 hours | Subagent dispatches |
 | 8. README + commits | 30-45 min | |

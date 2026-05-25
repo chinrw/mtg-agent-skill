@@ -485,11 +485,18 @@ def archetype_similarity(user_mainboard, sample_files):
         results.append((path, round(sim * 100, 1), shared))
     return sorted(results, key=lambda r: -r[1])
 
-# Usage:
-# >>> archetype_similarity(user_mb, glob.glob("samples/legacy/Legacy_*.txt"))
+# Usage — pull samples from the format-aware directory via format_data.py:
+# >>> from format_data import ARCHETYPE_SAMPLE_DIRS
+# >>> import glob, os
+# >>> sample_dir = ARCHETYPE_SAMPLE_DIRS[format]  # format from Step 0
+# >>> files = glob.glob(os.path.join(sample_dir, "*.txt"))
+# >>> archetype_similarity(user_mb, files)
+# Legacy example:
 # [('samples/legacy/Legacy_UR_Tempo_by_silviawataru.txt', 78.4, 23),
-#  ('samples/legacy/Legacy_Dimir_Tempo_by_kyataoka.txt', 41.2, 14),
-#  ...]
+#  ('samples/legacy/Legacy_Dimir_Tempo_by_kyataoka.txt', 41.2, 14), ...]
+# Modern example:
+# [('samples/modern/Modern_UR_Aggro_by_Eggybenny.txt', 72.1, 19),
+#  ('samples/modern/Modern_Boros_Aggro_by_BigDadChad.txt', 38.7, 11), ...]
 ```
 
 #### 5. N-card joint probability (Tron pieces, combo openers)
@@ -546,68 +553,95 @@ def joint_n_cards(N, card_counts, n_drawn):
 
 #### 6. Cantrip filtering depth and target-find probability
 
+The `CANTRIPS` catalog below holds per-card metadata (look/keep/draws/shuffles). The legality of each card per format is sourced from `format_data.py`'s `CANTRIP_POOLS` dict — import that and intersect with the user's mainboard to know which cantrips actually apply for the format identified in Step 0.
+
 ```python
-# Cantrip catalog: each entry = (look_depth, keep_depth, draws_card, shuffles)
+from format_data import CANTRIP_POOLS  # legal-cantrips-per-format whitelist
+
+# Cantrip catalog (format-agnostic metadata): each entry = (look_depth, keep_depth, draws_card, shuffles)
 # look_depth = how many top cards the cantrip reveals to you
 # keep_depth = how many go to hand
 # draws_card = +1 if the cantrip itself draws a card (Ponder's "then draw a card")
 # shuffles = True if the unrevealed cards return via a shuffle (Ponder optional)
 CANTRIPS = {
-    "Brainstorm": dict(look=3, keep=1, draws=2, shuffles=False),  # +3 see, net +1 (puts 2 back)
-    "Ponder":     dict(look=3, keep=0, draws=1, shuffles=True),
-    "Preordain":  dict(look=2, keep=0, draws=1, shuffles=False),
-    "Stock Up":   dict(look=5, keep=2, draws=0, shuffles=False),
-    "Flow State": dict(look=3, keep=1, draws=0, shuffles=False),
+    "Brainstorm": dict(look=3, keep=1, draws=2, shuffles=False),  # +3 see, net +1 (puts 2 back). Legacy only.
+    "Ponder":     dict(look=3, keep=0, draws=1, shuffles=True),   # Legacy only (banned in Modern)
+    "Preordain":  dict(look=2, keep=0, draws=1, shuffles=False),  # legal both
+    "Opt":        dict(look=1, keep=0, draws=1, shuffles=False),  # legal both
+    "Consider":   dict(look=1, keep=0, draws=1, shuffles=False),  # legal both — Modern-meta cantrip
+    "Stock Up":   dict(look=5, keep=2, draws=0, shuffles=False),  # legal both
+    "Flow State": dict(look=3, keep=1, draws=0, shuffles=False),  # legal both
     "Lorien Revealed": dict(look=0, keep=0, draws=3, shuffles=False),  # cast mode
-    "Mishra's Bauble": dict(look=1, keep=0, draws=1, shuffles=False),  # top of YOUR library
-    "Thundertrap Trainer": dict(look=4, keep=1, draws=0, shuffles=False),
+    "Mishra's Bauble": dict(look=1, keep=0, draws=1, shuffles=False),  # top of YOUR library, delayed draw
+    "Thundertrap Trainer": dict(look=4, keep=1, draws=0, shuffles=False),  # Legacy mostly
+    "Otherworldly Gaze": dict(look=3, keep=0, draws=0, shuffles=False),  # Modern (surveil 3)
+    "Expressive Iteration": dict(look=3, keep=2, draws=0, shuffles=False),  # Modern only (Legacy-banned)
+    "Reckless Impulse": dict(look=2, keep=2, draws=0, shuffles=False),  # impulse-exile cast (legal both)
+    "Wrenn's Resolve": dict(look=2, keep=2, draws=0, shuffles=False),    # impulse-exile cast (legal both)
+    "Manamorphose": dict(look=0, keep=0, draws=1, shuffles=False),       # ritual + cantrip (legal both)
 }
 
-def cantrip_depth(deck_cantrips_count, turn, on_play=True):
+# Filter to format-legal cantrips before counting from a decklist:
+#   legal_cantrips = {n: c for n, c in CANTRIPS.items() if n in CANTRIP_POOLS[format]}
+# Use legal_cantrips in cantrip_depth() below.
+
+def cantrip_depth(deck_cantrips_count, turn, on_play=True, format="legacy"):
     """
     Estimate effective cards seen by turn N given cantrip density.
 
     deck_cantrips_count: dict {cantrip_name: count_in_deck}
-    turn: which turn you're computing through
+    turn:    which turn you're computing through
     on_play: True if you're on the play (no T1 draw)
+    format:  "legacy" or "modern" — used to filter cantrips by per-format legality
 
     Returns: (cards_drawn_raw, effective_cards_seen_upper_bound)
 
     Upper bound assumes every cantrip is drawn AND cast — actual will be lower.
-    Treat the second number as a ceiling, not an expectation.
+    Treat the second number as a ceiling, not an expectation. Cantrips not legal
+    in the bound format are silently dropped from the count (with a warning).
     """
     raw_draws = 7 + (turn - 1) + (0 if on_play else 1)
-    # Probability of drawing each cantrip type by turn (rough):
-    # Assume ~50% of cantrip copies are drawn by turn 3.
     drawn_fraction = min(0.6, 0.2 * turn)
+    legal_for_format = set(CANTRIP_POOLS[format])
     extra_seen = 0
+    dropped = []
     for name, ct in deck_cantrips_count.items():
+        if name not in legal_for_format:
+            dropped.append(name)
+            continue
         cantrip = CANTRIPS.get(name)
         if not cantrip:
             continue
         copies_drawn = ct * drawn_fraction
         extra_seen += copies_drawn * cantrip["look"]
+    if dropped:
+        print(f"  [cantrip_depth] dropped (not legal in {format}): {dropped}")
     return raw_draws, raw_draws + int(extra_seen)
 
-def p_find_target_with_cantrips(N, K, deck_cantrips_count, turn, on_play=True):
+def p_find_target_with_cantrips(N, K, deck_cantrips_count, turn, on_play=True, format="legacy"):
     """
     Upper bound on P(see >=1 of target by turn N) accounting for cantrip selection.
     See cantrip_depth for caveats — this is a CEILING, not an exact probability.
 
     For a precise answer on a specific game state, simulate.
     """
-    raw, eff = cantrip_depth(deck_cantrips_count, turn, on_play)
-    # Raw hypergeometric (no cantrip selection):
+    raw, eff = cantrip_depth(deck_cantrips_count, turn, on_play, format)
     p_raw = 1 - comb(N - K, raw) / comb(N, raw) if N - K >= raw else 1.0
-    # Effective (with cantrip look depth — upper bound):
     p_eff = 1 - comb(N - K, eff) / comb(N, eff) if N - K >= eff else 1.0
     return {"P_raw": round(p_raw, 4), "P_with_cantrips_upper_bound": round(p_eff, 4)}
 
-# Usage (Doomsday looking for its namesake by T3 on the draw):
+# Usage (Doomsday looking for its namesake by T3 on the draw — Legacy):
 # >>> p_find_target_with_cantrips(60, 4,
-# ...     {"Brainstorm": 4, "Ponder": 4, "Flow State": 4}, turn=3, on_play=False)
+# ...     {"Brainstorm": 4, "Ponder": 4, "Flow State": 4}, turn=3, on_play=False,
+# ...     format="legacy")
 # {'P_raw': 0.4992, 'P_with_cantrips_upper_bound': 0.9091}
 # True P is somewhere in [0.50, 0.91]; cantrips bias toward keeping good cards.
+
+# Usage (Modern UR Aggro looking for Cori-Steel Cutter by T2 on the play):
+# >>> p_find_target_with_cantrips(60, 4,
+# ...     {"Mishra's Bauble": 4, "Consider": 4, "Expressive Iteration": 4},
+# ...     turn=2, on_play=True, format="modern")
+# Brainstorm would NOT count here — format=modern excludes it from CANTRIP_POOLS.
 ```
 
 **Why cantrip filtering is an upper bound, not exact:**
@@ -743,6 +777,8 @@ GREEN-verified by subagent test 2026-05-25: applied to a fresh Trinisphere meta 
 v4 (2026-05-25): repo restructured — each skill is its own folder at the repo root. The five-lens inclusion framework moved out of this directory (`mtg-card-evaluation.md`) and became a sibling skill (`mtg-card-evaluation/SKILL.md`), invoked via the Skill tool when an inclusion question arises. Motivation: name-folder correspondence so each skill installs independently, and the inclusion framework is reusable (callable standalone via `/mtg-card-evaluation`, not gated behind a full deck-analysis pass).
 
 v5 Phase 1 (2026-05-25): multi-format restructure preparation. Per `PLAN-modern-mode-b.md`. File moves: `reference-tables.md` → `reference-tables/legacy.md`; `samples/` → `samples/legacy/`. Stubs created for Modern: `reference-tables/modern.md` (Live Banlist sources canonical, rest TODO Phase 4) and `samples/modern/README.md` (TODO Phase 3). Step 3 updated to prefer Scryfall API banlist endpoint (`https://api.scryfall.com/cards/search?q=banned%3A<format>`) over Wizards HTML, with both URLs documented per format in their `reference-tables/<format>.md`. **Phase 1 leaves the skill fully functional for Legacy** via the new paths; Modern data populates in Phases 3–4. Step 0 (mandatory format identification) lands in Phase 2.
+
+v5 Phase 5 (2026-05-25): format_data.py module added at `mtg-deck-analysis/format_data.py`. Importable Python module exporting per-format constants: CANTRIP_POOLS (8 Legacy + 11 Modern cantrips, each Scryfall-verified for format legality and draw/filter effect), ARCHETYPE_SAMPLE_DIRS, WASTELAND_ANALOG, CHALICE_VULNERABILITY (per Chalice setting × format), FORMAT_CODES (mtgtop8 URL params + Scryfall banlist queries + Wizards page section anchors). Validators in SKILL.md updated: `cantrip_depth(...)` and `p_find_target_with_cantrips(...)` now accept `format=` keyword and filter the cantrip count dict by `CANTRIP_POOLS[format]`, with explicit warning when cards are dropped (e.g., `[cantrip_depth] dropped (not legal in modern): ['Brainstorm', 'Ponder']`). Catalog grew from 8 → 15 cantrips (added Opt, Consider, Otherworldly Gaze, Expressive Iteration, Reckless Impulse, Wrenn's Resolve, Manamorphose). `archetype_similarity()` example usage shows the `ARCHETYPE_SAMPLE_DIRS[format]` lookup. **File name uses underscore** (`format_data.py`) not hyphen — required for Python `from format_data import` to work. Module ships a `_self_check()` runnable via `python3 format_data.py` to assert all per-format dicts have matching keys and no duplicates. GREEN-verified live: same `p_find_target_with_cantrips` query under `format='legacy'` returns ceiling 0.879 (Brainstorm/Ponder counted); under `format='modern'` returns ceiling 0.528 (cantrips correctly dropped with printed warning).
 
 v5 Phase 4 (2026-05-25): Modern reference table content populated. `reference-tables/modern.md` now mirrors `legacy.md`'s structure with Modern-specific content: Card Name Pitfalls (Boseiju instant-speed/3-type targeting, evoke-pitch elementals MV != paid cost, MDFCs like Ajani/Ral, Cori-Steel Cutter Flurry trigger, Sowing Mycospawn Legacy-banned-not-Modern), Mana Value vs Paid Cost table (Solitude=5, Subtlety=4, Endurance=3, FoN=3), Top Staples by Archetype (per-archetype 4-of cards observed in the 10 Phase 3 samples), Manabase Patterns (fetchlands + shocklands + Surveil lands + Triomes + utility lands + Tron pieces), Format-Specific Interaction Pitfalls (FoN vs FoW cost difference, Triome ETB-tapped affects T1, Karn wishboards, Cascade), "Looks Played But Isn't" with verified-absent expected staples (Wrenn and Six, Murktide, Yawgmoth not in current top 10), "Looks Modern But Isn't" with Scryfall-verified banlist state. All cards in the file batch-verified via Scryfall cards/collection endpoint (61/61 found on first call). GREEN-verified by subagent: 6/6 checks pass on Boseiju oracle, evoke MVs, Legacy-banned/Modern-legal trio (Ragavan/Expressive Iteration/Sowing Mycospawn), Boros Aggro staples cross-checked against sample, Tron typeline (Land — Urza's Power-Plant with hyphen), and Live Banlist Verification Sources section presence. **Phase 4 makes the skill fully functional for Modern analyses** end-to-end.
 

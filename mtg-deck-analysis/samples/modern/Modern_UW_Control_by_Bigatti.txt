@@ -1,0 +1,46 @@
+# Format: Modern
+# Archetype: UW Control
+# Player: Bigatti
+# Tournament: MTGO Challenge 32
+# Source: https://www.mtgtop8.com/event?e=85569&d=849945&f=MO
+# Fetched: 2026-05-25
+# Tournament date: 2026-05-24
+# Mainboard: 60 | Sideboard: 14
+
+# MAINBOARD
+2 Arid Mesa
+1 Breeding Pool
+1 Field of Ruin
+4 Flooded Strand
+2 Floodfarm Verge
+1 Hall of Storm Giants
+2 Hallowed Fountain
+2 Island
+2 Meticulous Archive
+1 Misty Rainforest
+1 Mystic Gate
+1 Otawara, Soaring City
+2 Plains
+1 Polluted Delta
+1 Scalding Tarn
+1 Thundering Falls
+4 Solitude
+4 Consult the Star Charts
+4 Counterspell
+4 Orim's Chant
+4 Prismatic Ending
+2 Spell Pierce
+1 Stock Up
+2 Supreme Verdict
+2 Wrath of the Skies
+2 Isochron Scepter
+2 Teferi, Hero of Dominaria
+4 Teferi, Time Raveler
+
+# SIDEBOARD
+4 Consign to Memory
+2 High Noon
+3 Mystical Dispute
+1 Surgical Extraction
+2 Vexing Bauble
+2 Wrath of the Skies

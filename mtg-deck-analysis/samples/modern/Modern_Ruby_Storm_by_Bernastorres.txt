@@ -1,0 +1,43 @@
+# Format: Modern
+# Archetype: Ruby Storm
+# Player: Bernastorres
+# Tournament: MTGO Challenge 32
+# Source: https://www.mtgtop8.com/event?e=85569&d=849950&f=MO
+# Fetched: 2026-05-25
+# Tournament date: 2026-05-24
+# Mainboard: 60 | Sideboard: 15
+
+# MAINBOARD
+3 Arid Mesa
+2 Bloodstained Mire
+1 Commercial District
+1 Elegant Parlor
+1 Gemstone Caverns
+4 Mountain
+1 Sacred Foundry
+2 Scalding Tarn
+1 Sunbaked Canyon
+2 Wooded Foothills
+4 Ral, Monsoon Mage
+4 Desperate Ritual
+2 Flashback
+2 Glimpse the Impossible
+1 Grapeshot
+4 Manamorphose
+3 Past in Flames
+4 Pyretic Ritual
+4 Reckless Impulse
+2 Valakut Awakening
+2 Wish
+4 Wrenn's Resolve
+2 Artist's Talent
+4 Ruby Medallion
+
+# SIDEBOARD
+1 Empty the Warrens
+2 Fire Magic
+1 Grapeshot
+3 Orim's Chant
+1 Past in Flames
+4 Prismatic Ending
+3 Wear / Tear

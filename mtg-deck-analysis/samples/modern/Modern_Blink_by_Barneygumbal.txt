@@ -1,0 +1,45 @@
+# Format: Modern
+# Archetype: Blink
+# Player: Barneygumbal
+# Tournament: MTGO Challenge 32
+# Source: https://www.mtgtop8.com/event?e=85569&d=849942&f=MO
+# Fetched: 2026-05-25
+# Tournament date: 2026-05-24
+# Mainboard: 60 | Sideboard: 15
+
+# MAINBOARD
+1 Bleachbone Verge
+4 Flooded Strand
+1 Godless Shrine
+1 Hallowed Fountain
+4 Marsh Flats
+1 Meticulous Archive
+2 Plains
+2 Polluted Delta
+1 Shadowy Backstreet
+1 Swamp
+1 Undercity Sewers
+1 Watery Grave
+1 Boggart Trawler
+3 Emperor of Bones
+2 Flickerwisp
+2 Orcish Bowmasters
+4 Overlord of the Balemurk
+4 Phelia, Exuberant Shepherd
+4 Quantum Riddler
+4 Solitude
+3 Witch Enchanter
+2 Ephemerate
+4 Fatal Push
+1 Prismatic Ending
+4 Thoughtseize
+2 Teferi, Time Raveler
+
+# SIDEBOARD
+1 Clarion Conqueror
+3 Consign to Memory
+2 High Noon
+2 Mystical Dispute
+1 Strix Serenade
+3 White Orchid Phantom
+3 Wrath of the Skies

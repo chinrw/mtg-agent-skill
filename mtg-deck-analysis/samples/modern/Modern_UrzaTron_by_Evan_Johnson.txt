@@ -1,0 +1,43 @@
+# Format: Modern
+# Archetype: UrzaTron
+# Player: Evan Johnson
+# Tournament: RCQ @ The Mighty Meeple (Concord, NC)
+# Source: https://www.mtgtop8.com/event?e=85489&d=849336&f=MO
+# Fetched: 2026-05-25
+# Tournament date: 2026-05-23
+# Mainboard: 60 | Sideboard: 15
+
+# MAINBOARD
+1 Boseiju, Who Endures
+4 Eldrazi Temple
+1 Forest
+4 Ugin's Labyrinth
+4 Urza's Mine
+4 Urza's Power Plant
+4 Urza's Tower
+4 Devourer of Destiny
+2 Sire of Seven Deaths
+4 Sowing Mycospawn
+4 Thought-Knot Seer
+1 Ulamog, the Ceaseless Hunger
+4 Kozilek's Command
+2 Warping Wail
+4 Expedition Map
+4 Karn, the Great Creator
+1 Talisman of Curiosity
+4 Talisman of Resilience
+4 Ugin, Eye of the Storms
+
+# SIDEBOARD
+1 Chalice of the Void
+1 Cityscape Leveler
+1 Dismember
+1 Disruptor Flute
+1 Ensnaring Bridge
+1 Liquimetal Coating
+1 The Stone Brain
+1 Tormod's Crypt
+1 Torpor Orb
+2 Trinisphere
+3 Vexing Bauble
+1 Walking Ballista

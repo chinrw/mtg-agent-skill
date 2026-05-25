@@ -1,0 +1,44 @@
+# Format: Modern
+# Archetype: Eldrazi Ramp
+# Player: Mickael Gervais
+# Tournament: RCQ @ Magiccorporation (Paris, France)
+# Source: https://www.mtgtop8.com/event?e=85486&d=849314&f=MO
+# Fetched: 2026-05-25
+# Tournament date: 2026-05-23
+# Mainboard: 60 | Sideboard: 15
+
+# MAINBOARD
+1 Bojuka Bog
+1 Cavern of Souls
+1 Commercial District
+4 Eldrazi Temple
+3 Forest
+1 Ghost Quarter
+1 Misty Rainforest
+1 Shifting Woodland
+2 Stomping Ground
+4 Ugin's Labyrinth
+1 Verdant Catacombs
+1 Windswept Heath
+1 Wooded Foothills
+3 Devourer of Destiny
+3 Emrakul, the Promised End
+3 Formidable Speaker
+3 Icetill Explorer
+2 Sire of Seven Deaths
+4 Sowing Mycospawn
+4 Kozilek's Command
+3 Kozilek's Return
+4 Malevolent Rumble
+4 Talisman of Impulse
+1 Ugin, Eye of the Storms
+4 Utopia Sprawl
+
+# SIDEBOARD
+3 Fade from History
+1 Ghost Quarter
+2 Grafdigger's Cage
+1 Icetill Explorer
+3 Trinisphere
+2 Unholy Heat
+3 Vexing Bauble

@@ -1,0 +1,51 @@
+# Format: Modern
+# Archetype: Amulet Titan
+# Player: HouseOfManaMTG
+# Tournament: MTGO Challenge 32
+# Source: https://www.mtgtop8.com/event?e=85565&d=849901&f=MO
+# Fetched: 2026-05-25
+# Tournament date: 2026-05-23
+# Mainboard: 60 | Sideboard: 15
+
+# MAINBOARD
+2 Boseiju, Who Endures
+4 Crumbling Vestige
+1 Dryad Arbor
+1 Echoing Deeps
+3 Forest
+4 Gruul Turf
+1 Hanweir Battlements
+1 Mirrorpool
+1 Otawara, Soaring City
+1 Shifting Woodland
+4 Simic Growth Chamber
+1 The Mycosynth Gardens
+1 Tolaria West
+1 Urza's Cave
+4 Urza's Saga
+1 Vesuva
+1 Aftermath Analyst
+4 Arboreal Grazer
+1 Cultivator Colossus
+3 Primeval Titan
+1 Sylvan Safekeeper
+4 Green Sun's Zenith
+3 Scapeshift
+2 Summoner's Pact
+4 Amulet of Vigor
+4 Spelunking
+1 Vexing Bauble
+1 Zuran Orb
+
+# SIDEBOARD
+1 Bojuka Bog
+1 Boseiju, Who Endures
+1 Collector Ouphe
+2 Dismember
+2 Firespout
+2 Force of Vigor
+1 Six
+1 Soul-Guide Lantern
+1 Tireless Tracker
+1 Titania, Protector of Argoth
+2 Vexing Bauble

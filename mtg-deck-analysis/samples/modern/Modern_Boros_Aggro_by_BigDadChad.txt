@@ -1,0 +1,44 @@
+# Format: Modern
+# Archetype: Boros Aggro
+# Player: BigDadChad
+# Tournament: MTGO League
+# Source: https://www.mtgtop8.com/event?e=85570&d=849955&f=MO
+# Fetched: 2026-05-25
+# Tournament date: 2026-05-24
+# Mainboard: 60 | Sideboard: 15
+
+# MAINBOARD
+2 Arena of Glory
+4 Arid Mesa
+1 Dalkovan Encampment
+2 Elegant Parlor
+4 Flooded Strand
+4 Marsh Flats
+1 Mountain
+2 Plains
+3 Sacred Foundry
+4 Ajani, Nacatl Pariah
+4 Guide of Souls
+4 Ocelot Pride
+1 Phelia, Exuberant Shepherd
+4 Ragavan, Nimble Pilferer
+2 Ranger-Captain of Eos
+2 Seasoned Pyromancer
+2 Voice of Victory
+4 Galvanic Discharge
+2 Thraben Charm
+1 Blood Moon
+3 Fable of the Mirror-Breaker
+3 Goblin Bombardment
+1 The Legend of Roku
+
+# SIDEBOARD
+1 Blood Moon
+1 Damping Sphere
+2 High Noon
+3 Obsidian Charmaw
+2 Orim's Chant
+1 Reprieve
+2 Rest in Peace
+1 Vexing Bauble
+2 Wrath of the Skies

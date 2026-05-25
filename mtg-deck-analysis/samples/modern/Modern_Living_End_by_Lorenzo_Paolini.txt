@@ -1,0 +1,47 @@
+# Format: Modern
+# Archetype: Living End
+# Player: Lorenzo Paolini
+# Tournament: RCQ @ Magic Maze (Prato, Italy)
+# Source: https://www.mtgtop8.com/event?e=85563&d=849886&f=MO
+# Fetched: 2026-05-25
+# Tournament date: 2026-05-24
+# Mainboard: 60 | Sideboard: 15
+
+# MAINBOARD
+1 Boseiju, Who Endures
+1 Breeding Pool
+1 Commercial District
+1 Forest
+1 Hedge Maze
+1 Island
+1 Mistrise Village
+4 Misty Rainforest
+1 Otawara, Soaring City
+1 Steam Vents
+1 Stomping Ground
+1 Thundering Falls
+1 Colossal Skyturtle
+4 Curator of Mysteries
+3 Endurance
+4 Generous Ent
+1 Oliphaunt
+4 Shardless Agent
+4 Street Wraith
+2 Striped Riverwinder
+4 Subtlety
+1 Waker of Waves
+4 Wistfulness
+4 Force of Negation
+3 Living End
+2 Sink into Stupor
+4 Violent Outburst
+
+# SIDEBOARD
+1 Brazen Borrower
+3 Damping Matrix
+2 Dismember
+1 Endurance
+2 Force of Vigor
+1 Foundation Breaker
+2 Inevitable Betrayal
+3 Mystical Dispute

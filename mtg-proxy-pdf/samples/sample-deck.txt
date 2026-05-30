@@ -1,0 +1,11 @@
+# Tiny smoke-test deck for mtg-proxy-pdf (8 cards -> one A4 page).
+# Exercises: quantities, a double-faced card (front-only), and a basic land.
+
+Deck
+2 Lightning Bolt
+1 Counterspell
+1 Llanowar Elves
+1 Brainstorm
+1 Delver of Secrets
+1 Giant Growth
+1 Island

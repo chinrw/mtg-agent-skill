@@ -1,6 +1,6 @@
 # mtg-agent-skill
 
-Two Claude Code [Agent Skills](https://agentskills.io) for rigorous Magic: The Gathering analysis. Both enforce a verification-first workflow that prevents the most common failure modes when LLMs reason about MTG: stale card text from training data, outdated ban lists, hallucinated meta percentages, and lock-piece interactions that ignore the resolved-permanent rule.
+Three Claude Code [Agent Skills](https://agentskills.io) for Magic: The Gathering. Two are analysis skills — `mtg-deck-analysis` and `mtg-card-evaluation` — that enforce a verification-first workflow preventing the most common failure modes when LLMs reason about MTG: stale card text from training data, outdated ban lists, hallucinated meta percentages, and lock-piece interactions that ignore the resolved-permanent rule. The third, `mtg-proxy-pdf`, is a print utility: it turns a decklist into a print-ready proxy-sheet PDF (nine real-size cards per A4 page, images from Scryfall).
 
 **Status:** v5 multi-format (Legacy + Modern) + Mode B card-in-meta release shipped 2026-05-25. `PLAN-modern-mode-b.md` will be archived in a future cleanup commit.
 
@@ -10,14 +10,16 @@ Two Claude Code [Agent Skills](https://agentskills.io) for rigorous Magic: The G
 |---|---|---|---|
 | [`mtg-deck-analysis`](./mtg-deck-analysis) | `mtg-deck-analysis/` | Legacy, Modern | Decklist evaluation, matchup prediction, probability math, meta positioning |
 | [`mtg-card-evaluation`](./mtg-card-evaluation) | `mtg-card-evaluation/` | Legacy, Modern | Mode A: "Does card X belong in deck Y?" (five-lens scorecard). Mode B: "How does card X fit in the current format meta?" (six-lens card-in-meta positioning with Tier verdict) |
+| [`mtg-proxy-pdf`](./mtg-proxy-pdf) | `mtg-proxy-pdf/` | Any | Print-ready proxy PDF — 9 cards per A4 page at real card size (63×88 mm) with crop marks; card images auto-fetched from Scryfall |
 
-Both skills are configured with `disable-model-invocation: true`. They do not auto-load into context. Invoke them explicitly:
+All three skills are configured with `disable-model-invocation: true`. They do not auto-load into context. Invoke them explicitly:
 
 ```
 /mtg-deck-analysis analyze the current Legacy meta against Death & Taxes
 /mtg-deck-analysis Modern: how does Boros Aggro race Ruby Storm game 1?
 /mtg-card-evaluation should I add Chalice of the Void to my Blue Post list?
 /mtg-card-evaluation evaluate Boseiju, Who Endures in Modern May 2026
+/mtg-proxy-pdf make a print-ready proxy PDF from this decklist
 ```
 
 `mtg-deck-analysis` invokes `mtg-card-evaluation` automatically (via the Skill tool) when a deck-analysis run hits an inclusion question. You don't need to chain them by hand.
@@ -88,7 +90,7 @@ LLM reasoning about MTG fails in characteristic ways. Each rule across both skil
 | First Mode B preview called Boseiju "sorcery-speed nonbasic-hate" — channel is instant-speed, and the effect hits artifact/enchantment/nonbasic land (not just lands) | Mode B Iron Law: Oracle text must be **fetched live**, not recalled; applies even to the skill author writing the worked example |
 | Assumed Modern top-10 archetypes were Yawgmoth Pod / Hammer Time / Murktide; live mtgtop8 fetch on 2026-05-25 returned Boros Aggro / Affinity / Blink / Ruby Storm / Eldrazi Ramp / UR Aggro / UrzaTron / Living End / Amulet Titan / UW Control instead | Step 4: meta is **fetched on the day of analysis**, never recalled; sample directories are point-in-time snapshots and must be re-fetched when the meta shifts |
 
-Both skills are built TDD-style: every rule has a concrete past failure behind it.
+Both analysis skills are built TDD-style: every rule has a concrete past failure behind it.
 
 ## Installation
 
@@ -98,6 +100,7 @@ Skills are per-user in Claude Code. Drop each skill folder into `~/.claude/skill
 git clone git@github.com:chinrw/mtg-agent-skill.git /tmp/mtg-agent-skill
 ln -s /tmp/mtg-agent-skill/mtg-deck-analysis   ~/.claude/skills/mtg-deck-analysis
 ln -s /tmp/mtg-agent-skill/mtg-card-evaluation ~/.claude/skills/mtg-card-evaluation
+ln -s /tmp/mtg-agent-skill/mtg-proxy-pdf       ~/.claude/skills/mtg-proxy-pdf
 ```
 
 Or copy in place if you prefer non-symlinked installs:
@@ -106,9 +109,12 @@ Or copy in place if you prefer non-symlinked installs:
 git clone git@github.com:chinrw/mtg-agent-skill.git /tmp/mtg-agent-skill
 cp -r /tmp/mtg-agent-skill/mtg-deck-analysis   ~/.claude/skills/
 cp -r /tmp/mtg-agent-skill/mtg-card-evaluation ~/.claude/skills/
+cp -r /tmp/mtg-agent-skill/mtg-proxy-pdf       ~/.claude/skills/
 ```
 
-The directory names `mtg-deck-analysis` and `mtg-card-evaluation` must match the `name:` field inside each `SKILL.md` — keep them consistent or Claude Code won't pick up the skills.
+The directory names `mtg-deck-analysis`, `mtg-card-evaluation`, and `mtg-proxy-pdf` must match the `name:` field inside each `SKILL.md` — keep them consistent or Claude Code won't pick up the skills.
+
+`mtg-proxy-pdf` additionally needs [`uv`](https://docs.astral.sh/uv/) on your PATH — it runs `proxy_pdf.py` and builds the script's Python environment (`reportlab`, `requests`, `Pillow`) automatically from inline metadata, so there is nothing to `pip install`. The two analysis skills have no extra dependencies.
 
 ### Nix home-manager
 
@@ -123,11 +129,15 @@ home.file.".claude/skills/mtg-card-evaluation" = {
   source = "${inputs.mtg-agent-skill}/mtg-card-evaluation";
   recursive = true;
 };
+home.file.".claude/skills/mtg-proxy-pdf" = {
+  source = "${inputs.mtg-agent-skill}/mtg-proxy-pdf";
+  recursive = true;
+};
 ```
 
 ## How invocation works
 
-Both skills are `disable-model-invocation: true`, so Claude never auto-loads them. You invoke them explicitly with the slash command for the skill name. Within a `/mtg-deck-analysis` run, an inclusion question triggers an automatic `Skill` tool invocation of `mtg-card-evaluation` — that's the supported cross-skill pattern. You can also invoke `/mtg-card-evaluation` standalone.
+All three skills are `disable-model-invocation: true`, so Claude never auto-loads them. You invoke them explicitly with the slash command for the skill name. Within a `/mtg-deck-analysis` run, an inclusion question triggers an automatic `Skill` tool invocation of `mtg-card-evaluation` — that's the supported cross-skill pattern. You can also invoke `/mtg-card-evaluation` standalone.
 
 This design trade-off keeps the larger reference content (~4500 words for deck-analysis, ~1700 for card-evaluation) out of every conversation's context budget. They load only when explicitly asked.
 
@@ -170,8 +180,13 @@ mtg-agent-skill/
 │           ├── Modern_UW_Control_by_Bigatti.txt           # UW Control
 │           ├── Modern_Living_End_by_Lorenzo_Paolini.txt   # Living End
 │           └── Modern_Amulet_Titan_by_HouseOfManaMTG.txt  # Amulet Titan
-└── mtg-card-evaluation/                       # inclusion-question + card-in-meta skill
-    └── SKILL.md                               # Mode A (5-lens, deck given) + Mode B (6-lens, meta given)
+├── mtg-card-evaluation/                       # inclusion-question + card-in-meta skill
+│   └── SKILL.md                               # Mode A (5-lens, deck given) + Mode B (6-lens, meta given)
+└── mtg-proxy-pdf/                             # proxy-sheet PDF generator (Scryfall images, run via uv)
+    ├── SKILL.md                               # usage, options, printing guide, output verification
+    ├── proxy_pdf.py                           # the tool — PEP 723 inline deps (reportlab, requests, Pillow)
+    └── samples/
+        └── sample-deck.txt                    # 8-card smoke-test deck (incl. a double-faced card + a basic)
 ```
 
 `SKILL.md` is what Claude Code loads when the skill is invoked. Other markdown files load via `Read` only when an analysis actually needs them, to keep context lean. Format-specific files (`reference-tables/<format>.md`, `samples/<format>/`) are selected based on the format identified at Step 0 of the analysis.
